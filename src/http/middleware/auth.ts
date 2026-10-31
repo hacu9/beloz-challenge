@@ -78,10 +78,7 @@ export function requireNetworkKey(opts: { apiKey: string }): RequestHandler {
 export const BANK_SIGNATURE_HEADER = "x-bank-signature";
 
 export function bankSignature(secret: string, timestamp: number, rawBody: Buffer): string {
-  return createHmac("sha256", secret)
-    .update(`${timestamp}.`)
-    .update(rawBody)
-    .digest("hex");
+  return createHmac("sha256", secret).update(`${timestamp}.`).update(rawBody).digest("hex");
 }
 
 // SEC-04: the bank signs "<unix ts>.<raw body>" with HMAC-SHA256. A timestamp

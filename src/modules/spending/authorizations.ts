@@ -14,9 +14,7 @@ export const AuthorizationRequest = z.object({
   // No max here: an amount over MAX_AMOUNT is a decline, not a malformed call.
   amount: z.number().int().positive().refine(Number.isSafeInteger),
   currency: z.literal("MXN"),
-  merchant: z
-    .object({ name: z.string().max(200), mcc: z.string().regex(/^\d{4}$/) })
-    .optional(),
+  merchant: z.object({ name: z.string().max(200), mcc: z.string().regex(/^\d{4}$/) }).optional(),
 });
 export type AuthorizationRequest = z.infer<typeof AuthorizationRequest>;
 
@@ -84,7 +82,13 @@ export class Authorizations {
     const { rows } = await tx.query<{ id: string }>(
       `INSERT INTO holds (account_id, network_auth_id, amount, status, expires_at, created_at)
        VALUES ($1, $2, $3, 'open', $4, $5) RETURNING id`,
-      [account.id, req.networkAuthId, req.amount, new Date(now.getTime() + this.config.holdTtlDays * DAY_MS), now],
+      [
+        account.id,
+        req.networkAuthId,
+        req.amount,
+        new Date(now.getTime() + this.config.holdTtlDays * DAY_MS),
+        now,
+      ],
     );
     const holdId = rows[0]!.id;
     await this.accounts.update(

@@ -4,6 +4,7 @@ import { AuditLog } from "./modules/audit/audit.js";
 import { Deposits } from "./modules/collateral/deposits.js";
 import { Ledger } from "./modules/ledger/ledger.js";
 import { Authorizations } from "./modules/spending/authorizations.js";
+import { Clearing } from "./modules/spending/clearing.js";
 import type { Clock } from "./platform/clock.js";
 import type { Config } from "./platform/config.js";
 import type { Logger } from "./platform/logger.js";
@@ -19,6 +20,7 @@ export interface Deps {
   accounts: Accounts;
   deposits: Deposits;
   authorizations: Authorizations;
+  clearing: Clearing;
 }
 
 export function buildDeps(base: Pick<Deps, "config" | "pool" | "clock" | "logger">): Deps {
@@ -33,5 +35,6 @@ export function buildDeps(base: Pick<Deps, "config" | "pool" | "clock" | "logger
     base.config.minDepositCentavos,
   );
   const authorizations = new Authorizations(base.clock, audit, accounts, base.config);
-  return { ...base, ledger, audit, accounts, deposits, authorizations };
+  const clearing = new Clearing(base.clock, ledger, audit, accounts, authorizations);
+  return { ...base, ledger, audit, accounts, deposits, authorizations, clearing };
 }

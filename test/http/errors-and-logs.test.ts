@@ -47,7 +47,9 @@ describe("request ID and logs", () => {
   });
 
   it("OPS-02: replaces an unsafe X-Request-Id with a generated one", async () => {
-    const res = await request(app).get("/health").set("X-Request-Id", 'bad id "<script>" ' + "x".repeat(80));
+    const res = await request(app)
+      .get("/health")
+      .set("X-Request-Id", 'bad id "<script>" ' + "x".repeat(80));
     expect(res.headers["x-request-id"]).toMatch(/^[0-9a-f-]{36}$/);
   });
 

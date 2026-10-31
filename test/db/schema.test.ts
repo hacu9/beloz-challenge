@@ -91,7 +91,11 @@ describe("database guards", () => {
     });
 
     it("LEDGER-04 / AUDIT-03: the app role has no UPDATE, DELETE or TRUNCATE grant", async () => {
-      for (const sql of [`UPDATE ${table} SET id = id`, `DELETE FROM ${table}`, `TRUNCATE ${table}`]) {
+      for (const sql of [
+        `UPDATE ${table} SET id = id`,
+        `DELETE FROM ${table}`,
+        `TRUNCATE ${table}`,
+      ]) {
         await expect(h.pool.query(sql), sql).rejects.toThrow(/permission denied/);
       }
     });

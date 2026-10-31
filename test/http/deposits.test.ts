@@ -92,7 +92,11 @@ describe("collateral deposit", () => {
 
   it("COL-03: a duplicate returns the first result and posts nothing new", async () => {
     const { view } = await freshAccount();
-    const args = { reference: view.collateralReference, amount: 80_000, bankTxnId: `spei_${randomUUID()}` };
+    const args = {
+      reference: view.collateralReference,
+      amount: 80_000,
+      bankTxnId: `spei_${randomUUID()}`,
+    };
     await bankTransfer(app, h.clock, args);
     const dup = await bankTransfer(app, h.clock, args);
     expect(dup.status).toBe(200);
@@ -104,7 +108,11 @@ describe("collateral deposit", () => {
   it("COL-03: the same bank ID with a different amount is a 409 conflict", async () => {
     const { view } = await freshAccount();
     const bankTxnId = `spei_${randomUUID()}`;
-    await bankTransfer(app, h.clock, { reference: view.collateralReference, amount: 80_000, bankTxnId });
+    await bankTransfer(app, h.clock, {
+      reference: view.collateralReference,
+      amount: 80_000,
+      bankTxnId,
+    });
     const res = await bankTransfer(app, h.clock, {
       reference: view.collateralReference,
       amount: 90_000,
@@ -119,7 +127,11 @@ describe("collateral deposit", () => {
     const server = await listen(app);
     try {
       const { payload, headers } = signWebhook(
-        transferReceived({ reference: view.collateralReference, amount: 60_000, bankTxnId: `spei_${randomUUID()}` }),
+        transferReceived({
+          reference: view.collateralReference,
+          amount: 60_000,
+          bankTxnId: `spei_${randomUUID()}`,
+        }),
         testConfig.bankWebhookSecret,
         h.clock,
       );
@@ -149,11 +161,15 @@ describe("collateral deposit", () => {
           testConfig.bankWebhookSecret,
           h.clock,
         );
-        return fetch(`${server.url}/v1/bank/webhooks`, { method: "POST", headers, body: payload }).then(
-          (r) => r.json() as Promise<{ outcome: string }>,
-        );
+        return fetch(`${server.url}/v1/bank/webhooks`, {
+          method: "POST",
+          headers,
+          body: payload,
+        }).then((r) => r.json() as Promise<{ outcome: string }>);
       };
-      const outcomes = (await Promise.all([send(70_000), send(90_000)])).map((b) => b.outcome).sort();
+      const outcomes = (await Promise.all([send(70_000), send(90_000)]))
+        .map((b) => b.outcome)
+        .sort();
       expect(outcomes).toEqual(["collateral_confirmed", "credited_for_payback"]);
 
       const after = (await getAccount(app, auth, view.id)).body as AccountView;
@@ -168,7 +184,10 @@ describe("collateral deposit", () => {
 
   it("COL-09: a deposit below the minimum is credited for payback and the account stays pending", async () => {
     const { auth, view } = await freshAccount();
-    const res = await bankTransfer(app, h.clock, { reference: view.collateralReference, amount: MIN - 1 });
+    const res = await bankTransfer(app, h.clock, {
+      reference: view.collateralReference,
+      amount: MIN - 1,
+    });
     expect(res.body.outcome).toBe("credited_below_minimum");
     const after = (await getAccount(app, auth, view.id)).body as AccountView;
     expect(after).toMatchObject({
@@ -180,14 +199,20 @@ describe("collateral deposit", () => {
     await expectCacheMatchesLedger(view.id);
 
     // Exactly the minimum activates.
-    const ok = await bankTransfer(app, h.clock, { reference: view.collateralReference, amount: MIN });
+    const ok = await bankTransfer(app, h.clock, {
+      reference: view.collateralReference,
+      amount: MIN,
+    });
     expect(ok.body.outcome).toBe("collateral_confirmed");
   });
 
   it("COL-07: a second collateral transfer to an active account is credited, not added to the limit", async () => {
     const { auth, view } = await freshAccount();
     await bankTransfer(app, h.clock, { reference: view.collateralReference, amount: 100_000 });
-    const res = await bankTransfer(app, h.clock, { reference: view.collateralReference, amount: 30_000 });
+    const res = await bankTransfer(app, h.clock, {
+      reference: view.collateralReference,
+      amount: 30_000,
+    });
     expect(res.status).toBe(200);
     expect(res.body.outcome).toBe("credited_for_payback");
     const after = (await getAccount(app, auth, view.id)).body as AccountView;
@@ -233,17 +258,24 @@ describe("collateral deposit", () => {
       bankTxnId,
     });
     expect(res.status).toBe(501);
-    const { rowCount } = await h.pool.query("SELECT 1 FROM bank_transactions WHERE bank_txn_id = $1", [
-      bankTxnId,
-    ]);
+    const { rowCount } = await h.pool.query(
+      "SELECT 1 FROM bank_transactions WHERE bank_txn_id = $1",
+      [bankTxnId],
+    );
     expect(rowCount).toBe(0);
   });
 
   it("rejects a non-MXN or fractional transfer as malformed (422)", async () => {
     const { view } = await freshAccount();
     for (const body of [
-      { ...transferReceived({ reference: view.collateralReference, amount: 100_000 }), currency: "USD" },
-      { ...transferReceived({ reference: view.collateralReference, amount: 100_000 }), amount: 1000.5 },
+      {
+        ...transferReceived({ reference: view.collateralReference, amount: 100_000 }),
+        currency: "USD",
+      },
+      {
+        ...transferReceived({ reference: view.collateralReference, amount: 100_000 }),
+        amount: 1000.5,
+      },
     ]) {
       const { payload, headers } = signWebhook(body, testConfig.bankWebhookSecret, h.clock);
       const res = await request(app).post("/v1/bank/webhooks").set(headers).send(payload);

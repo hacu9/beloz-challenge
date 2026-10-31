@@ -36,7 +36,9 @@ describe("open account", () => {
       "customer_credit",
       "customer_receivable",
     ]);
-    const audit = await h.pool.query("SELECT action FROM audit_log WHERE entity_id = $1", [view.id]);
+    const audit = await h.pool.query("SELECT action FROM audit_log WHERE entity_id = $1", [
+      view.id,
+    ]);
     expect(audit.rows).toEqual([{ action: "account.opened" }]);
   });
 
@@ -80,7 +82,11 @@ describe("open account", () => {
     const auth = await bearer("customer", h.clock);
     const key = randomUUID();
     const send = () =>
-      request(app).post("/v1/accounts").set("Authorization", auth).set("Idempotency-Key", key).send({});
+      request(app)
+        .post("/v1/accounts")
+        .set("Authorization", auth)
+        .set("Idempotency-Key", key)
+        .send({});
     const first = await send();
     const second = await send();
     expect(second.status).toBe(201);

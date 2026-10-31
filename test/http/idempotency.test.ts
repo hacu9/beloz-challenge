@@ -86,9 +86,16 @@ describe("idempotency", () => {
         Array.from({ length: 20 }, () =>
           fetch(`${server.url}/test/transfers`, {
             method: "POST",
-            headers: { authorization: auth, "idempotency-key": key, "content-type": "application/json" },
+            headers: {
+              authorization: auth,
+              "idempotency-key": key,
+              "content-type": "application/json",
+            },
             body: JSON.stringify({ amount: 100, holdMs: 300 }),
-          }).then(async (r) => ({ status: r.status, body: (await r.json()) as { journalId: string } })),
+          }).then(async (r) => ({
+            status: r.status,
+            body: (await r.json()) as { journalId: string },
+          })),
         ),
       );
       expect(responses.map((r) => r.status)).toEqual(Array(20).fill(201));

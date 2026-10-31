@@ -21,10 +21,7 @@ export const TransferReceived = z.object({
 export type TransferReceived = z.infer<typeof TransferReceived>;
 
 export type DepositOutcome =
-  | "collateral_confirmed"
-  | "credited_below_minimum"
-  | "credited_for_payback"
-  | "unapplied";
+  "collateral_confirmed" | "credited_below_minimum" | "credited_for_payback" | "unapplied";
 
 export interface DepositResult {
   bankTxnId: string;

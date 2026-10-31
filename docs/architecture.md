@@ -225,7 +225,14 @@ COMMIT
   lock, lazy hold expiry, then the checks in this order: account `active`, card
   `active`, amount ≤ `MAX_AMOUNT_CENTAVOS`, amount ≤ available credit. Every
   decision is stored in `authorizations`; only an approval creates a hold.
-- Lock order is always: idempotency key (or the network/bank ID advisory lock), then account row. One account per
+- **Capture / refund**: advisory lock on the network capture or refund ID,
+  stored-result lookup, card token → account row lock, lazy expiry, then the
+  hold row (`FOR UPDATE`). Only an open hold is released and linked; anything
+  else still posts. A refund reduces `posted_debt` first and credits the rest.
+- **Reversal**: authorization → account row lock → hold row lock. The account
+  lock matters even though the hold lock serialises capture vs reversal: without
+  it a reversal racing a new authorization overwrites `held_total` (lost update).
+- Lock order is always: idempotency key (or the network/bank ID advisory lock), then account row, then hold row. One account per
   transaction. So no deadlock between two money calls.
 - The account row lock is the guard for SPEND-03. The test fires 20 parallel
   authorizations whose sum exceeds the limit and asserts that
@@ -286,7 +293,7 @@ returns 422 (IDEM-04). A network or bank duplicate returns the first result.
 | POST | `/v1/accounts/:id/freeze`, `/unfreeze` | customer, ops (backlog) |
 | POST | `/v1/network/authorizations` | network |
 | POST | `/v1/network/authorizations/:networkAuthId/reversal` | network |
-| POST | `/v1/network/captures` | network |
+| POST | `/v1/network/captures` | network (`networkAuthId` optional: force post) |
 | POST | `/v1/network/refunds` | network |
 | GET | `/v1/accounts` | customer (own accounts only) |
 | POST | `/v1/bank/webhooks` | bank (`transfer.received`; M6 adds `payout.completed`, `payout.failed`) |
@@ -298,6 +305,7 @@ returns 422 (IDEM-04). A network or bank duplicate returns the first result.
 
 All jobs read the injectable clock and take the account lock like any other writer.
 
+- Run with `npm run job -- <name>` locally, `node dist/jobs/cli.js <name>` in a container.
 - `expire-holds`: marks overdue holds `expired` and lowers `held_total`. The authorize path also expires holds lazily, so correctness does not depend on the job. Until the job runs, `GET /v1/accounts/:id` can show an overdue hold in `heldTotal`; the next authorization never sees it.
 - `progress-closures`: moves `closing` → `settling`, posts the collateral application, requests the payouts.
 - `reconcile`: OPS-03.

@@ -42,8 +42,12 @@ export async function activeAccount(
 ): Promise<{ auth: string; view: AccountView; cardToken: string }> {
   const auth = await bearer("customer", h.clock);
   const view = await openAccount(app, auth);
-  const res = await bankTransfer(app, h.clock, { reference: view.collateralReference, amount: collateral });
-  if (res.body.outcome !== "collateral_confirmed") throw new Error(`activation failed: ${res.text}`);
+  const res = await bankTransfer(app, h.clock, {
+    reference: view.collateralReference,
+    amount: collateral,
+  });
+  if (res.body.outcome !== "collateral_confirmed")
+    throw new Error(`activation failed: ${res.text}`);
   const { rows } = await h.pool.query<{ token: string }>(
     "SELECT token FROM cards WHERE account_id = $1",
     [view.id],

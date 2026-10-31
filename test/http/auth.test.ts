@@ -51,9 +51,13 @@ describe("SEC-01: customer and ops JWTs", () => {
 
   it("OPS-01: expiry follows the injected clock", async () => {
     const t = await token("customer", { ttlSeconds: 60 });
-    expect((await request(app).get("/test/customer").set("Authorization", `Bearer ${t}`)).status).toBe(200);
+    expect(
+      (await request(app).get("/test/customer").set("Authorization", `Bearer ${t}`)).status,
+    ).toBe(200);
     h.clock.advanceMs(61_000);
-    expect((await request(app).get("/test/customer").set("Authorization", `Bearer ${t}`)).status).toBe(401);
+    expect(
+      (await request(app).get("/test/customer").set("Authorization", `Bearer ${t}`)).status,
+    ).toBe(401);
   });
 
   it("rejects the wrong role with 403", async () => {
@@ -67,10 +71,13 @@ describe("SEC-01: customer and ops JWTs", () => {
 describe("SEC-03: card network API key", () => {
   it("accepts the right key and rejects a missing or wrong key", async () => {
     expect(
-      (await request(app).post("/test/network").set("X-Network-Key", testConfig.networkApiKey)).status,
+      (await request(app).post("/test/network").set("X-Network-Key", testConfig.networkApiKey))
+        .status,
     ).toBe(200);
     expect((await request(app).post("/test/network")).status).toBe(401);
-    expect((await request(app).post("/test/network").set("X-Network-Key", "nope")).status).toBe(401);
+    expect((await request(app).post("/test/network").set("X-Network-Key", "nope")).status).toBe(
+      401,
+    );
   });
 });
 

@@ -30,7 +30,11 @@ export function errorHandler(logger: Logger): ErrorRequestHandler {
     } else if (err instanceof ZodError) {
       appError = new AppError(422, "validation_failed", "the request is not valid", err.issues);
     } else if (isBodyParserError(err) && err.status < 500) {
-      appError = new AppError(err.status, "malformed_request", "the request body is not valid JSON");
+      appError = new AppError(
+        err.status,
+        "malformed_request",
+        "the request body is not valid JSON",
+      );
     } else {
       logger.error({ err, method: req.method, path: req.path }, "unhandled error");
       appError = new AppError(500, "internal_error", "internal error");

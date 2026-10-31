@@ -62,10 +62,18 @@ describe("authorization", () => {
 
   it("SPEND-02: the exact available amount is approved; one centavo more is declined", async () => {
     const { cardToken } = await activeAccount(app, h, 100_000);
-    expect((await authorize(app, authorization({ cardToken, amount: 60_000 }))).body.approved).toBe(true);
+    expect((await authorize(app, authorization({ cardToken, amount: 60_000 }))).body.approved).toBe(
+      true,
+    );
     const over = await authorize(app, authorization({ cardToken, amount: 40_001 }));
-    expect(over.body).toMatchObject({ approved: false, declineReason: "insufficient_credit", holdId: null });
-    expect((await authorize(app, authorization({ cardToken, amount: 40_000 }))).body.approved).toBe(true);
+    expect(over.body).toMatchObject({
+      approved: false,
+      declineReason: "insufficient_credit",
+      holdId: null,
+    });
+    expect((await authorize(app, authorization({ cardToken, amount: 40_000 }))).body.approved).toBe(
+      true,
+    );
   });
 
   it("LEDGER-05: an authorization writes nothing to the ledger", async () => {
@@ -84,9 +92,15 @@ describe("authorization", () => {
         Array.from({ length: 20 }, () =>
           fetch(`${server.url}/v1/network/authorizations`, {
             method: "POST",
-            headers: { "content-type": "application/json", "x-network-key": testConfig.networkApiKey },
+            headers: {
+              "content-type": "application/json",
+              "x-network-key": testConfig.networkApiKey,
+            },
             body: JSON.stringify(authorization({ cardToken, amount: 7_000 })),
-          }).then(async (r) => ({ status: r.status, body: (await r.json()) as { approved: boolean } })),
+          }).then(async (r) => ({
+            status: r.status,
+            body: (await r.json()) as { approved: boolean },
+          })),
         ),
       );
       expect(results.map((r) => r.status)).toEqual(Array(20).fill(200));
@@ -108,11 +122,17 @@ describe("authorization", () => {
     // A second collateral transfer is credited for payback, not added to the limit.
     await bankTransfer(app, h.clock, { reference: view.collateralReference, amount: 30_000 });
     const after = (await getAccount(app, auth, view.id)).body as AccountView;
-    expect(after).toMatchObject({ creditLimit: 100_000, creditBalance: 30_000, availableCredit: 100_000 });
+    expect(after).toMatchObject({
+      creditLimit: 100_000,
+      creditBalance: 30_000,
+      availableCredit: 100_000,
+    });
 
     const over = await authorize(app, authorization({ cardToken, amount: 100_001 }));
     expect(over.body).toMatchObject({ approved: false, declineReason: "insufficient_credit" });
-    expect((await authorize(app, authorization({ cardToken, amount: 100_000 }))).body.approved).toBe(true);
+    expect(
+      (await authorize(app, authorization({ cardToken, amount: 100_000 }))).body.approved,
+    ).toBe(true);
   });
 
   it("COL-05 / SPEND-05: a card on a pending_collateral account is declined", async () => {
@@ -192,9 +212,15 @@ describe("SPEND-11: one decision per network authorization ID", () => {
         Array.from({ length: 10 }, () =>
           fetch(`${server.url}/v1/network/authorizations`, {
             method: "POST",
-            headers: { "content-type": "application/json", "x-network-key": testConfig.networkApiKey },
+            headers: {
+              "content-type": "application/json",
+              "x-network-key": testConfig.networkApiKey,
+            },
             body: payload,
-          }).then(async (r) => ({ status: r.status, body: (await r.json()) as { holdId: string } })),
+          }).then(async (r) => ({
+            status: r.status,
+            body: (await r.json()) as { holdId: string },
+          })),
         ),
       );
       expect(results.map((r) => r.status)).toEqual(Array(10).fill(200));
@@ -221,9 +247,10 @@ describe("SPEND-09: hold expiry", () => {
     const second = await authorize(app, authorization({ cardToken, amount: 100_000 }));
     expect(second.body.approved).toBe(true);
 
-    const { rows } = await h.pool.query<{ status: string }>("SELECT status FROM holds WHERE id = $1", [
-      first.body.holdId,
-    ]);
+    const { rows } = await h.pool.query<{ status: string }>(
+      "SELECT status FROM holds WHERE id = $1",
+      [first.body.holdId],
+    );
     expect(rows[0]!.status).toBe("expired");
     expect(await holdState(view.id)).toMatchObject({ open_count: 1, held_total: 100_000 });
     // The customer token from before the 7 days has expired; read as ops.

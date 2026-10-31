@@ -66,9 +66,15 @@ describe("ledger", () => {
       const a = await ledger.systemAccountId(tx, "cash_operating");
       const b = await ledger.systemAccountId(tx, "unapplied_funds");
       const cases = [
-        [{ ledgerAccountId: a, amount: 100 }, { ledgerAccountId: b, amount: -99 }],
+        [
+          { ledgerAccountId: a, amount: 100 },
+          { ledgerAccountId: b, amount: -99 },
+        ],
         [{ ledgerAccountId: a, amount: 100 }],
-        [{ ledgerAccountId: a, amount: 0 }, { ledgerAccountId: b, amount: 0 }],
+        [
+          { ledgerAccountId: a, amount: 0 },
+          { ledgerAccountId: b, amount: 0 },
+        ],
       ];
       for (const lines of cases) {
         await expect(ledger.post(tx, { kind: "correction", lines })).rejects.toThrow(

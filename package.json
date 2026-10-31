@@ -12,6 +12,7 @@
     "start": "node dist/server.js",
     "dev": "tsx watch src/server.ts",
     "db:migrate": "tsx src/platform/db/migrate-cli.ts",
+    "job": "tsx src/jobs/cli.ts",
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",

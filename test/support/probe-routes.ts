@@ -60,7 +60,10 @@ export function mountProbeRoutes(app: Express, deps: Deps): void {
           lines: transfer(debit, credit, body.amount),
         });
         await deps.audit.write(tx, {
-          actor: { type: "customer", id: req.principal?.type === "customer" ? req.principal.id : "" },
+          actor: {
+            type: "customer",
+            id: req.principal?.type === "customer" ? req.principal.id : "",
+          },
           action: "probe.transfer",
           entityType: "probe",
           entityId: req.idempotency!.key,

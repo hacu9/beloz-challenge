@@ -9,12 +9,7 @@ import type { Actor, AuditLog } from "../audit/audit.js";
 import type { Ledger } from "../ledger/ledger.js";
 
 export type AccountStatus =
-  | "pending_collateral"
-  | "active"
-  | "frozen"
-  | "closing"
-  | "settling"
-  | "closed";
+  "pending_collateral" | "active" | "frozen" | "closing" | "settling" | "closed";
 
 export type CardStatus = "inactive" | "active" | "blocked";
 
@@ -79,7 +74,10 @@ export interface AccountView {
   status: AccountStatus;
   currency: "MXN";
   creditLimit: Centavos;
+  /** Never below 0 in the view (D-M5-2); the excess shows as overLimit. */
   availableCredit: Centavos;
+  /** How far a capture pushed the account over its limit (SPEND-06). */
+  overLimit: Centavos;
   postedDebt: Centavos;
   heldTotal: Centavos;
   creditBalance: Centavos;
@@ -95,12 +93,14 @@ export function availableCredit(a: Pick<Account, "credit_limit" | "posted_debt" 
 }
 
 export function toView(account: Account, card: Card): AccountView {
+  const available = availableCredit(account);
   return {
     id: account.id,
     status: account.status,
     currency: "MXN",
     creditLimit: account.credit_limit,
-    availableCredit: availableCredit(account),
+    availableCredit: Math.max(0, available),
+    overLimit: Math.max(0, -available),
     postedDebt: account.posted_debt,
     heldTotal: account.held_total,
     creditBalance: account.credit_balance,
@@ -163,7 +163,12 @@ export class Accounts {
     const { rows: cards } = await tx.query<Card>(
       `INSERT INTO cards (account_id, token, last4, status, created_at, updated_at)
        VALUES ($1, $2, $3, 'inactive', $4, $4) RETURNING id, account_id, token, last4, status`,
-      [account.id, `tok_${randomUUID().replaceAll("-", "")}`, String(randomInt(0, 10_000)).padStart(4, "0"), now],
+      [
+        account.id,
+        `tok_${randomUUID().replaceAll("-", "")}`,
+        String(randomInt(0, 10_000)).padStart(4, "0"),
+        now,
+      ],
     );
     await this.ledger.openCustomerAccounts(tx, account.id);
     await this.audit.write(tx, {

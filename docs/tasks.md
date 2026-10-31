@@ -82,13 +82,32 @@ only when other files had written audit rows first (now it seeds its own row).
 | Expiry `<` instead of `<=` | SPEND-09 (boundary) |
 | No account status check | COL-05 / SPEND-05 |
 
-## M5 — Capture, reversal, expiry, refund
+## M5 — Capture, reversal, expiry, refund (done 2026-10-31)
 
-- [ ] `fake-network` client.
-- [ ] Capture (over the hold, after expiry). (SPEND-06, SPEND-07), incl. force post
-- [ ] Reversal. (SPEND-08)
-- [ ] Expiry job + lazy expiry. (SPEND-09)
-- [ ] Refund, with excess to credit balance. (SPEND-10)
+- [x] Network endpoints for capture, reversal and refund (the `fake-network` client is the test helper for now; the demo script in M8 drives them).
+- [x] Capture (over the hold, after expiry, force post, second capture). (SPEND-06, SPEND-07, SPEND-11, SPEND-14)
+- [x] Reversal. (SPEND-08, SPEND-15)
+- [x] Expiry job + lazy expiry. (SPEND-09)
+- [x] Refund, with excess to credit balance. (SPEND-10, SPEND-12)
+- [x] View clamp: `availableCredit >= 0`, `overLimit`. (SPEND-16)
+- [x] CI: Prettier check and `npm audit --omit=dev`.
+
+**Mutation checks (M5).**
+
+| Mutation | Test that goes red |
+|---|---|
+| Capture does not release the hold amount | SPEND-07 and 6 more |
+| Capture refuses an amount above the hold | SPEND-06 |
+| No advisory lock on the capture ID | SPEND-11 (10 overlapping deliveries) |
+| Refund puts the whole amount on the debt | SPEND-10 / SPEND-12, SPEND-11 |
+| Reversal ignores a captured hold | SPEND-15 |
+| Reversal without account lock or version check | the reversal-vs-authorizations race (3 of 3 runs) |
+| Sweep job does nothing | SPEND-09 sweep |
+| No clamp in the view | SPEND-16 |
+
+The reversal-lock mutation first stayed green: the capture-vs-reversal race is
+already serialised by the hold row lock. The account lock protects a different
+race (reversal vs new authorizations on the same account), so that test was added.
 
 ## M6 — Repayment
 

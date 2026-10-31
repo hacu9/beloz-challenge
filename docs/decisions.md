@@ -90,6 +90,15 @@ accepted them on 2026-10-31.
 | D-M4-4 | An amount over `MAX_AMOUNT_CENTAVOS` is a decline, not a 422. | The card network expects a decision for a well-formed request. |
 | D-M4-5 | Holds expire lazily under the account lock before each decision; the sweep job (M5) is a convenience, not a guard. | Correctness must not depend on a job running on time. |
 
+## M5 build decisions (2026-10-31)
+
+| ID | Decision | Reason |
+|---|---|---|
+| D-M5-1 | A payout of a credit balance leaves from the bank account where the money landed. The source comes from the ledger: a `customer_credit` line from a `deposit` entry came through `cash_collateral` (pay back as a return of that transfer); one from a `refund` or `repayment` came through operating cash. | Henry agreed 2026-10-31. No new table: the journal already records it. Implemented in M6. |
+| D-M5-2 | The account view clamps `availableCredit` at 0 and shows `overLimit`; decisions use the real value. | Henry agreed 2026-10-31. A negative "available" confuses a customer; hiding the excess hides debt. |
+| D-M5-3 | A capture releases the whole open hold, whatever its amount, and links to it; a capture on a hold that is not open links to nothing. | One capture per hold (OQ-09); `captures.hold_id` is unique, and a capture must never fail. |
+| D-M5-4 | A capture or refund does not net against an existing credit balance. | The credit balance is paid back (REPAY-04), and its source decides which bank account pays (D-M5-1). Netting would mix the two. |
+
 ## Dependency audit (2026-10-31)
 
 | Package | Severity | Scope | Action |
