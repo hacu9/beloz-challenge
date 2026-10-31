@@ -262,8 +262,8 @@ D1 (a comment) and F2 (a digest pin) change no behaviour; F2 is proven by a buil
 
 ## M10 — Delivery
 
-- [ ] Export the Claude Code transcripts into `PROMPTS.md`, in order. (Q4)
-- [ ] Thinking-process doc: choices, trade-offs, what we left out and why.
+- [x] Export the Claude Code transcripts into `PROMPTS.md`, in order. (Q4) Done by Henry.
+- [x] Thinking-process doc: choices, trade-offs, what we left out and why. (`docs/thinking-process.md`, by Henry)
 - [ ] Final pass: spec matches code, every requirement has a test.
 
 ## Backlog (after the core, in this order)
