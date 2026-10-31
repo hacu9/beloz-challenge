@@ -82,3 +82,28 @@ The bank, the card network and the login provider are simulated (`src/fakes/`).
 Terraform for AWS (ECS Fargate, RDS, Secrets Manager, EventBridge Scheduler)
 is in `infra/terraform/`; see [`docs/deployment.md`](docs/deployment.md). CI
 validates it; nothing here applies it.
+
+## Known limits
+
+What this service does not do, on purpose, for the scope of the challenge:
+
+- **No UI.** Everything is an HTTP API. `npm run demo` and `docs/money-flow.md`
+  show the flow end to end instead.
+- **No interest and no statements.** Debt does not accrue interest, there is no
+  billing cycle, no minimum payment and no late fee. Interest needs a rounding
+  rule first (see the backlog in [`docs/tasks.md`](docs/tasks.md)).
+- **Fake bank and fake card network.** The bank (SPEI transfers, payouts and
+  their webhooks), the card network (authorizations, captures, refunds) and the
+  login provider are simulated in `src/fakes/`. The contracts are real (signed
+  webhooks, network API key, idempotent IDs), the partners are not.
+
+Also known, and recorded in [`docs/decisions.md`](docs/decisions.md):
+
+- The treasury sweep between the collateral and operating bank accounts is an
+  ops task; the ledger records the move, the service does not track the real
+  transfer (D-MF-1).
+- One capture per authorization (no split shipments), no partial reversal,
+  no collateral top-up or limit increase, no customer transaction history
+  endpoint.
+- One currency (MXN).
+- The Terraform is validated and tested in CI but has never been applied to AWS.
