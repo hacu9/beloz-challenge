@@ -69,6 +69,17 @@ accepted them on 2026-10-31.
 | OQ-12 | Late bank webhook for a payout | The webhook resolves the payout only while it is still `unknown`. If a person already resolved it, the webhook changes nothing; when its result differs from the person's, the service flags the mismatch for ops. |
 | COL-09 | Deposit below the minimum | Accepted as proposed: credit balance + payback, the account stays `pending_collateral`. |
 
+## M3 build decisions (2026-10-31)
+
+| ID | Decision | Reason |
+|---|---|---|
+| D-M3-1 | One bank event, `transfer.received`, for all incoming money. The reference decides deposit vs repayment. | A SPEI transfer has no purpose field; the CLABE it went to is the only signal (OQ-07). |
+| D-M3-2 | Until M6, a transfer to a repayment reference returns 501 and records nothing. | The rollback stores nothing, so the bank retries and no money is lost or half-applied. |
+| D-M3-3 | Until M6, a credited deposit (COL-07, COL-09) raises `credit_balance`; the payout itself ships with the payout module. | The ledger and the cached balance are correct now; only the outgoing transfer waits. |
+| D-M3-4 | One non-closed account per customer, enforced by a partial unique index (COL-10). | Q20 says one account, one card. The index also wins the race between parallel opens. |
+| D-M3-5 | A transfer amount has no maximum. | The money already landed (COL-06). `MAX_AMOUNT_CENTAVOS` applies to requests, not to money received. |
+| D-M3-6 | Card token `tok_<32 hex>` and a random last4, from a simulated issuer. | SEC-05: the service never sees a PAN. |
+
 ## Dependency audit (2026-10-31)
 
 | Package | Severity | Scope | Action |

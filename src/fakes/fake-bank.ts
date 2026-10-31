@@ -1,8 +1,9 @@
+import { randomUUID } from "node:crypto";
 import type { Clock } from "../platform/clock.js";
 import { BANK_SIGNATURE_HEADER, bankSignature } from "../http/middleware/auth.js";
 
-// Simulated bank (Q5). M2 has only the webhook signer; M3 adds the webhook
-// sender and M6 the payout endpoint.
+// Simulated bank (Q5). It signs webhooks like a real bank would. M6 adds the
+// payout endpoint.
 export function signWebhook(
   body: unknown,
   secret: string,
@@ -18,4 +19,39 @@ export function signWebhook(
       [BANK_SIGNATURE_HEADER]: `t=${timestamp},v1=${signature}`,
     },
   };
+}
+
+export interface TransferArgs {
+  reference: string;
+  amount: number;
+  bankTxnId?: string;
+}
+
+export function transferReceived(args: TransferArgs) {
+  return {
+    type: "transfer.received" as const,
+    bankTxnId: args.bankTxnId ?? `spei_${randomUUID()}`,
+    reference: args.reference,
+    amount: args.amount,
+    currency: "MXN" as const,
+  };
+}
+
+export class FakeBank {
+  constructor(
+    private readonly baseUrl: string,
+    private readonly secret: string,
+    private readonly clock: Clock,
+  ) {}
+
+  /** A customer sends money by SPEI to one of their account references. */
+  async sendTransfer(args: TransferArgs): Promise<{ status: number; body: unknown }> {
+    const { payload, headers } = signWebhook(transferReceived(args), this.secret, this.clock);
+    const res = await fetch(`${this.baseUrl}/v1/bank/webhooks`, {
+      method: "POST",
+      headers,
+      body: payload,
+    });
+    return { status: res.status, body: await res.json() };
+  }
 }

@@ -1,5 +1,7 @@
 import type pg from "pg";
+import { Accounts } from "./modules/accounts/accounts.js";
 import { AuditLog } from "./modules/audit/audit.js";
+import { Deposits } from "./modules/collateral/deposits.js";
 import { Ledger } from "./modules/ledger/ledger.js";
 import type { Clock } from "./platform/clock.js";
 import type { Config } from "./platform/config.js";
@@ -13,12 +15,20 @@ export interface Deps {
   logger: Logger;
   ledger: Ledger;
   audit: AuditLog;
+  accounts: Accounts;
+  deposits: Deposits;
 }
 
 export function buildDeps(base: Pick<Deps, "config" | "pool" | "clock" | "logger">): Deps {
-  return {
-    ...base,
-    ledger: new Ledger(base.clock),
-    audit: new AuditLog(base.clock),
-  };
+  const ledger = new Ledger(base.clock);
+  const audit = new AuditLog(base.clock);
+  const accounts = new Accounts(base.clock, ledger, audit);
+  const deposits = new Deposits(
+    base.clock,
+    ledger,
+    audit,
+    accounts,
+    base.config.minDepositCentavos,
+  );
+  return { ...base, ledger, audit, accounts, deposits };
 }

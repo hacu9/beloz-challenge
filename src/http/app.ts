@@ -1,5 +1,7 @@
 import express, { type Express } from "express";
 import type { Deps } from "../deps.js";
+import { accountRoutes } from "../modules/accounts/routes.js";
+import { bankRoutes } from "../modules/collateral/bank-routes.js";
 import { accessLog } from "./middleware/access-log.js";
 import { errorHandler, notFoundHandler } from "./middleware/errors.js";
 import { requestId } from "./middleware/request-id.js";
@@ -30,6 +32,9 @@ export function buildApp(deps: Deps, opts: AppOptions = {}): Express {
     await deps.pool.query("SELECT 1");
     res.json({ status: "ok" });
   });
+
+  app.use("/v1/accounts", accountRoutes(deps));
+  app.use("/v1/bank", bankRoutes(deps));
 
   opts.mount?.(app, deps);
 

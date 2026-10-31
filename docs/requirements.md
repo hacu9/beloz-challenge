@@ -37,6 +37,7 @@ Format: each requirement has an ID, one rule, and the source decision (`Q` =
 | COL-06 | The service shall never reject a confirmed deposit webhook because of the account state. Money that landed is always recorded. | OQ-02 |
 | COL-07 | A deposit for a known account that is not `pending_collateral` shall go to the customer credit balance and be paid back. | OQ-02 |
 | COL-08 | A deposit with an unknown reference shall go to `unapplied_funds` and be flagged for ops. | OQ-02 |
+| COL-10 | A customer shall have at most one account that is not `closed`. A second open request shall return HTTP 409. | Q20 |
 | COL-09 | A deposit below `MIN_DEPOSIT_CENTAVOS` on a `pending_collateral` account shall go to the customer credit balance and be paid back. The account shall stay `pending_collateral`. | OQ-10 |
 
 ## 4. Spending (SPEND)

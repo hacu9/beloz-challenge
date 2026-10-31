@@ -42,12 +42,25 @@ probe holds the transaction with `pg_sleep`), and the audit trigger test passed
 only when other files had written audit rows first (now it seeds its own row).
 
 
-## M3 — Accounts and collateral
+## M3 — Accounts and collateral (done 2026-10-31)
 
-- [ ] Open account + card (token, last4). (COL-01, SEC-05)
-- [ ] `fake-bank` that signs webhooks.
-- [ ] Deposit webhook → journal, limit, activation in one transaction. (COL-02..09)
-- [ ] Ownership checks on read endpoints. (SEC-02)
+- [x] Open account + card (token, last4), one open account per customer. (COL-01, COL-10, SEC-05)
+- [x] `fake-bank` that signs and sends `transfer.received` webhooks.
+- [x] Deposit webhook → journal, limit, activation in one transaction. (COL-02..04, COL-06..09)
+- [x] Ownership checks on read endpoints. (SEC-02)
+- Deferred: COL-05 is proved in M4 (authorization). The payback payout of COL-07/COL-09 ships in M6 (D-M3-3).
+
+**Mutation checks (M3).**
+
+| Mutation | Test that goes red |
+|---|---|
+| No advisory lock on the bank transaction ID | COL-03 (10 overlapping deliveries) |
+| No `FOR UPDATE` on the reference lookup | COL-06 (two transfers racing) |
+| No `FOR UPDATE` and no version check | COL-06 |
+| Minimum compare `>` instead of `>=` | COL-09 |
+| Drop the customer filter on reads | SEC-02 |
+| Drop the one-open-account index | COL-10 (both tests) |
+| Skip the card activation | COL-04 |
 
 ## M4 — Authorization
 

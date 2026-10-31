@@ -238,7 +238,17 @@ Two mechanisms, one per caller type:
 |---|---|---|
 | Customer, ops | `Idempotency-Key` header, scoped per caller | `idempotency_keys` |
 | Card network | `network_auth_id`, `network_capture_id`, `network_refund_id` | unique columns |
-| Bank | `bank_txn_id` | `bank_transactions` primary key |
+| Bank | `bank_txn_id` | `bank_transactions` primary key, behind a transaction-scoped advisory lock on the ID |
+
+**Bank transfers.** The bank sends one event type for all incoming money,
+`transfer.received`, with the reference the customer paid to. SPEI money has no
+"purpose", so the reference decides (OQ-07): the collateral reference goes to
+the deposit flow, the repayment reference to the repayment flow (M6), and an
+unknown reference to `unapplied_funds`. The handler takes
+`pg_advisory_xact_lock(hash(bank_txn_id))` first, then the account row lock. A
+parallel duplicate waits on the advisory lock and then reads the stored
+outcome. The app role has no UPDATE on `bank_transactions`, so the row is
+written once, at the end, with its outcome and journal.
 
 For the header flow, the key row goes in first inside the transaction. A
 parallel request with the same key blocks on the primary key until the first
@@ -271,7 +281,8 @@ returns 422 (IDEM-04). A network or bank duplicate returns the first result.
 | POST | `/v1/network/authorizations/:networkAuthId/reversal` | network |
 | POST | `/v1/network/captures` | network |
 | POST | `/v1/network/refunds` | network |
-| POST | `/v1/bank/webhooks` | bank (`deposit.confirmed`, `repayment.confirmed`, `payout.completed`, `payout.failed`) |
+| GET | `/v1/accounts` | customer (own accounts only) |
+| POST | `/v1/bank/webhooks` | bank (`transfer.received`; M6 adds `payout.completed`, `payout.failed`) |
 | GET | `/v1/ops/payouts?status=unknown,failed` | ops |
 | POST | `/v1/ops/payouts/:id/resolve` | ops |
 | GET | `/v1/ops/unapplied-funds` | ops |
