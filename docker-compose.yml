@@ -1,5 +1,14 @@
 name: acme-credit
 
+# One image for every service. Build it with `docker compose build`
+# (or `DOCKER_BUILDKIT=0 docker compose build` where buildx is missing).
+x-app: &app
+  image: acme-credit:local
+  build: .
+  env_file: .env.example
+  environment:
+    DATABASE_URL: postgres://acme_app:acme_app_local@db:5432/acme
+
 services:
   db:
     image: postgres:16-alpine
@@ -19,7 +28,7 @@ services:
       - pgdata:/var/lib/postgresql/data
 
   migrate:
-    build: .
+    <<: *app
     command: ["node", "dist/platform/db/migrate-cli.js"]
     environment:
       MIGRATION_DATABASE_URL: postgres://postgres:postgres@db:5432/acme
@@ -28,14 +37,34 @@ services:
       db:
         condition: service_healthy
 
+  # OPS-04: one demo customer with an active account (idempotent).
+  seed:
+    <<: *app
+    command: ["node", "dist/jobs/cli.js", "seed"]
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+
   app:
-    build: .
-    env_file: .env.example
-    environment:
-      DATABASE_URL: postgres://acme_app:acme_app_local@db:5432/acme
+    <<: *app
     ports:
       # 3080 on the host, to avoid other local dev servers on 3000.
       - "3080:3000"
+    depends_on:
+      seed:
+        condition: service_completed_successfully
+
+  # Scheduled jobs, run on demand: `docker compose run --rm jobs <job>`.
+  # Jobs: expire-holds | send-payouts | progress-closures | reconcile | seed.
+  jobs:
+    <<: *app
+    entrypoint: ["node", "dist/jobs/cli.js"]
+    environment:
+      DATABASE_URL: postgres://acme_app:acme_app_local@db:5432/acme
+      # Demo only: no 30-day wait for late captures, so `npm run demo` can
+      # close an account in one run. The app keeps the .env.example value.
+      CLOSING_CAPTURE_WINDOW_DAYS: "0"
+    profiles: ["tools"]
     depends_on:
       migrate:
         condition: service_completed_successfully

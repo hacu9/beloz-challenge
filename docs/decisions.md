@@ -120,6 +120,18 @@ accepted them on 2026-10-31.
 | D-M7-4 | Collateral already in a payout is never pulled back. Debt that appears after that is charged off. | The money has left or may have left (`unknown`). Pulling it back needs the bank. |
 | D-M7-5 | Stuck payouts are flagged in two kinds: `not_submitted` and `no_bank_result` (PAYOUT-14). | Henry asked for a stuck flag; SPEI settles in seconds, so both are suspect after minutes. |
 
+## M8 / M9 build decisions (2026-10-31)
+
+| ID | Decision | Reason |
+|---|---|---|
+| D-M8-1 | The demo runs the jobs as one-off containers (`docker compose run --rm jobs <job>`), like production. | The demo then proves the job entry point and its exit codes, not a test-only shortcut. |
+| D-M8-2 | The `jobs` Compose service sets `CLOSING_CAPTURE_WINDOW_DAYS=0`; the app keeps 30. | The demo must close an account in one run without a fake clock. Only the closure job reads the window. |
+| D-M8-3 | The demo reads the card token from the database. | The token belongs to the card network (SEC-05: the API never returns it). In production the issuer processor hands it over. |
+| D-M8-4 | `reconcile` also checks `charged_off_outstanding` against the `charge_offs` log and `credit_returnable <= credit_balance`. | These caches were added in M6/M7 after Q25 was written. |
+| D-M9-1 | Terraform generates every secret, so they are in the state; the S3 backend must be encrypted and locked. | Simplest correct first environment. RDS-managed master passwords plus rotation is the next step. |
+| D-M9-2 | ARM64 (Graviton) Fargate tasks, one NAT gateway, HTTPS-only ALB. | Cost for a first environment; production adds a NAT per AZ. |
+| D-M9-3 | Jobs are scheduled one-off tasks with no scheduler retry. | Each job step is idempotent under the account lock; the next tick is the retry. A failure raises an alarm. |
+
 ## Dependency audit (2026-10-31)
 
 | Package | Severity | Scope | Action |

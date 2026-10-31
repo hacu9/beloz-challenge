@@ -57,41 +57,48 @@ infra/terraform/   AWS (not applied)
 Rule: only `ledger/` writes to the ledger tables. Other modules call
 `ledger.post(tx, entry)` with the open transaction.
 
-## 3. Data model (sketch)
+## 3. Data model
+
+Source of truth: `db/migrations/001..006`. Summary (CHECKs abbreviated):
 
 ```sql
-accounts (
-  id uuid pk, customer_id uuid not null,
-  status text not null check (status in
-    ('pending_collateral','active','frozen','closing','settling','closed')),
-  credit_limit  bigint not null default 0 check (credit_limit >= 0),
-  posted_debt   bigint not null default 0,  -- cache of the receivable balance; can exceed the limit (SPEND-06)
-  held_total    bigint not null default 0 check (held_total >= 0),
-  credit_balance bigint not null default 0 check (credit_balance >= 0),
-  version bigint not null default 0,
-  closing_started_at timestamptz, created_at timestamptz not null
-)
-cards (id uuid pk, account_id uuid unique not null, token text unique not null,
-       last4 char(4) not null, status text not null check (status in ('inactive','active','blocked')))
-holds (id uuid pk, account_id uuid not null, network_auth_id text unique not null,
-       amount bigint not null check (amount > 0),
-       status text not null check (status in ('open','captured','reversed','expired')),
-       expires_at timestamptz not null, created_at timestamptz not null)
-authorizations (network_auth_id text pk, card_token text, account_id uuid null, amount bigint, approved bool,
-                decline_reason text, hold_id uuid unique, merchant jsonb, decided_at timestamptz)  -- every decision (SPEND-11)
-captures (id uuid pk, network_capture_id text unique not null, hold_id uuid, amount bigint check (amount > 0), journal_id uuid not null)
-refunds  (id uuid pk, network_refund_id text unique not null, amount bigint check (amount > 0), journal_id uuid not null)
-bank_transactions (bank_txn_id text pk, kind text not null, account_id uuid, amount bigint, journal_id uuid, received_at timestamptz)
-payouts (id uuid pk, account_id uuid, kind text, amount bigint check (amount > 0),
-         status text check (status in ('requested','completed','failed','unknown')),
-         bank_txn_id text unique, resolved_by text, resolution_note text)
-ledger_accounts (id uuid pk, code text not null, account_id uuid null, normal_side text, unique (code, account_id))
-journal_entries (id uuid pk, kind text not null, reverses_id uuid null, request_id text, created_at timestamptz)
-journal_lines (id bigserial pk, journal_id uuid not null, ledger_account_id uuid not null, amount bigint not null check (amount <> 0))
-idempotency_keys (caller text, key text, request_hash text not null, response_status int, response_body jsonb,
-                  created_at timestamptz, primary key (caller, key))
-audit_log (id bigserial pk, actor text, action text, entity text, entity_id uuid,
-           before jsonb, after jsonb, request_id text, at timestamptz)
+accounts (id uuid pk, customer_id uuid,           -- one non-closed account per customer (partial unique index)
+  status text check (pending_collateral|active|frozen|closing|settling|closed),
+  -- cached balances; reconcile recomputes them (OPS-03)
+  credit_limit bigint >= 0,                        -- = customer_collateral balance (Q16: 1:1)
+  posted_debt bigint >= 0,                         -- = customer_receivable; may exceed the limit (SPEND-06)
+  held_total bigint >= 0,                          -- = sum of open holds
+  credit_balance bigint >= 0,                      -- = customer_credit
+  credit_returnable bigint >= 0, <= credit_balance -- credited deposits, returned, never netted (D-M6-1)
+  charged_off_outstanding bigint >= 0,             -- owed after charge-off (CLOSE-07/09)
+  collateral_reference text unique, repayment_reference text unique,   -- OQ-07
+  payout_clabe text,                               -- D-M6-3
+  version bigint, activated_at, closing_started_at, created_at, updated_at timestamptz)
+cards (id, account_id unique, token unique, last4 char(4), status inactive|active|blocked)
+holds (id, account_id, network_auth_id unique, amount > 0,
+       status open|captured|reversed|expired, expires_at, created_at, closed_at)
+authorizations (network_auth_id pk, card_token, account_id null, amount, approved,
+                decline_reason, hold_id unique, merchant jsonb, decided_at)       -- every decision (SPEND-11)
+captures (id, network_capture_id unique, account_id, hold_id unique null, network_auth_id,
+          card_token, amount > 0, journal_id, created_at)
+refunds (id, network_refund_id unique, network_capture_id, account_id, card_token, amount > 0,
+         debt_reduced, credited, journal_id, created_at)                          -- debt_reduced + credited = amount
+bank_transactions (bank_txn_id pk, kind deposit|payout_result, reference, account_id, amount,
+                   outcome (closed list), journal_id, received_at)               -- COL-03 dedupe
+payouts (id, account_id, kind collateral|credit|return, amount > 0,
+         status requested|completed|failed|unknown|cancelled, source_cash, destination_clabe,
+         return_of unique -> bank_transactions, submitted_at, bank_txn_id unique, journal_id,
+         resolved_by, resolution_note, mismatch, created_at, updated_at)        -- completed <=> journal_id
+charge_offs (id, account_id, kind charge_off|recovery, amount > 0, journal_id, created_at)   -- append-only by grant
+ledger_accounts (id, code (closed list), account_id null for system, type asset|liability|expense,
+                 unique nulls not distinct (code, account_id))
+journal_entries (id, kind, account_id, reverses_id, request_id, created_at, created_txid xid8)
+journal_lines (id bigserial, journal_id, ledger_account_id, amount <> 0)        -- debit > 0, credit < 0
+idempotency_keys (caller, key, request_hash, response_status, response_body jsonb,
+                  created_at, completed_at, pk (caller, key))
+audit_log (id bigserial, actor_type, actor_id, action, entity_type, entity_id,
+           before jsonb, after jsonb, request_id, at)
+schema_migrations (version pk, checksum, applied_at)                             -- edited migration = startup error
 ```
 
 - A deferred constraint trigger checks that the lines of each journal sum to zero at commit (LEDGER-02).
@@ -105,7 +112,9 @@ audit_log (id bigserial pk, actor text, action text, entity text, entity_id uuid
 **Test strategy.** The tests run against a real Postgres 16. Each run drops and
 re-creates `acme_test` and migrates it like production. The ledger cannot be
 truncated, so tests never reset data: each test creates and checks its own rows.
-A guard test counts only if a mutation of the guard turns it red (see tasks.md).
+Checks that take table-wide locks run in `acme_test_isolated`, a migrated copy
+with no traffic (D-M6-5). A guard test counts only if a mutation of the guard
+turns it red (see tasks.md).
 
 ## 4. Money
 
@@ -189,7 +198,7 @@ stateDiagram-v2
   (the process died between commit and the bank call) appears in
   `GET /v1/ops/payouts?status=requested`; nothing resends it. A cancelled
   `return` keeps its credit returnable and is not re-created; a person decides.
-- A late bank webhook resolves a payout only while it is `unknown` (PAYOUT-08).
+- A late bank webhook resolves a payout only while it is `requested` or `unknown` (PAYOUT-08).
   After a person resolved it, the webhook changes nothing; a different result
   raises a mismatch flag for ops (PAYOUT-09).
 
@@ -227,15 +236,20 @@ Every write that touches an account runs this pattern (P6):
 
 ```
 BEGIN                                         -- READ COMMITTED
-INSERT idempotency key ... ON CONFLICT DO NOTHING   -- parallel duplicate blocks here
+INSERT idempotency key ... ON CONFLICT DO NOTHING   -- or: advisory lock on the network/bank ID
 SELECT ... FROM accounts WHERE id = $1 FOR UPDATE   -- all writers on the account serialise here
-expire overdue holds of this account (lazy expiry, SPEND-09)
+expire overdue holds of this account          -- only where the decision reads held_total (below)
 check the rule (state, available credit)
 INSERT hold / journal / audit; UPDATE accounts counters
 UPDATE idempotency key with the response
 COMMIT
 ```
 
+- **Lazy hold expiry** (SPEND-09) runs in the paths whose decision depends on
+  `held_total`: authorize, capture, reversal, closure progress, and the sweep
+  job. Deposits, repayments, refunds and payout results do not read it, so
+  they skip it; an overdue hold they leave in place is expired by the next of
+  those paths.
 - **Authorization** (`POST /v1/network/authorizations`): advisory lock on the
   `network_auth_id`, stored decision lookup, card token → account, account row
   lock, lazy hold expiry, then the checks in this order: account `active`, card
@@ -298,30 +312,36 @@ returns 422 (IDEM-04). A network or bank duplicate returns the first result.
 - Card data: we store the network token and `last4` only (SEC-05).
 - Secrets come from env vars. In AWS they come from Secrets Manager.
 
-## 10. API (first cut)
+## 10. API
+
+Routers: `src/modules/accounts/routes.ts`, `src/modules/spending/network-routes.ts`,
+`src/modules/collateral/bank-routes.ts`, `src/modules/payouts/ops-routes.ts`,
+mounted in `src/http/app.ts`. Every customer/ops write needs `Idempotency-Key`.
 
 | Method | Path | Caller |
 |---|---|---|
-| POST | `/v1/accounts` | customer |
-| GET | `/v1/accounts/:id` | customer, ops |
-| GET | `/v1/accounts/:id/transactions` | customer, ops |
-| POST | `/v1/accounts/:id/close` | customer, ops |
-| POST | `/v1/accounts/:id/freeze`, `/unfreeze` | customer, ops (backlog) |
+| GET | `/health` | anyone (checks the database) |
+| POST | `/v1/accounts` | customer (body: `payoutClabe`) |
+| GET | `/v1/accounts` | customer (own accounts only) |
+| GET | `/v1/accounts/:id` | customer (own), ops |
+| POST | `/v1/accounts/:id/close` | customer (own), ops |
 | POST | `/v1/network/authorizations` | network |
 | POST | `/v1/network/authorizations/:networkAuthId/reversal` | network |
 | POST | `/v1/network/captures` | network (`networkAuthId` optional: force post) |
 | POST | `/v1/network/refunds` | network |
-| GET | `/v1/accounts` | customer (own accounts only) |
-| POST | `/v1/bank/webhooks` | bank (`transfer.received`; M6 adds `payout.completed`, `payout.failed`) |
-| GET | `/v1/ops/payouts?status=…&mismatch=…&accountId=…` | ops |
-| POST | `/v1/ops/payouts/:id/resolve` | ops |
+| POST | `/v1/bank/webhooks` | bank (`transfer.received`, `payout.completed`, `payout.failed`) |
+| GET | `/v1/ops/payouts?status=…&mismatch=…&stuck=…&accountId=…` | ops |
+| POST | `/v1/ops/payouts/:id/resolve` | ops (body: `action` completed/failed/retry/cancel, `note`) |
 | GET | `/v1/ops/unapplied-funds` | ops |
+
+Not built (backlog): `POST /v1/accounts/:id/freeze` and `/unfreeze` (FREEZE-01),
+and a customer transaction history endpoint.
 
 ## 11. Background jobs
 
 All jobs read the injectable clock and take the account lock like any other writer.
 
-- Run with `npm run job -- <name>` locally, `node dist/jobs/cli.js <name>` in a container.
+- Run with `docker compose run --rm jobs <name>` locally (or `npm run job -- <name>` from the host), `node dist/jobs/cli.js <name>` in a container. In AWS, EventBridge Scheduler starts each as a one-off ECS task (`infra/terraform/jobs.tf`).
 - `send-payouts`: creates the due `return` and `credit` payouts per account (one transaction each, under the account lock), then sends each one after commit.
 - `expire-holds`: marks overdue holds `expired` and lowers `held_total`. The authorize path also expires holds lazily, so correctness does not depend on the job. Until the job runs, `GET /v1/accounts/:id` can show an overdue hold in `heldTotal`; the next authorization never sees it.
 - `progress-closures`: one idempotent step per account, under the account lock:
@@ -329,12 +349,15 @@ All jobs read the injectable clock and take the account lock like any other writ
   2. in `settling` (and on `closed` accounts where late money arrived, CLOSE-08): net free credit, apply unreserved collateral to the debt, charge off what is left (`charge_offs` row, `charged_off_outstanding`), create the collateral, credit and return payouts;
   3. `settling` → `closed` when debt, holds, collateral and credit are all 0 and no payout is open.
   Payouts are sent after the commit. Collateral already in a payout is never pulled back: debt that appears after it left is charged off.
-- `reconcile`: OPS-03.
+- `reconcile` (OPS-03): read-only. Checks the ledger sums to zero and, per account, `credit_limit`, `posted_debt`, `credit_balance` against the ledger, `held_total` against open holds, `charged_off_outstanding` against the `charge_offs` log, and `credit_returnable <= credit_balance`. Exits 1 on any mismatch; the AWS alarm fires on that.
+- `seed` (OPS-04): one demo customer with an active account, through the same module code as the API. Idempotent.
 
 ## 12. Deployment (AWS, not applied)
 
-Terraform in `infra/terraform/`: VPC with private subnets, ECS Fargate service
-behind an ALB, RDS Postgres (Multi-AZ, encrypted, automated backups), Secrets
-Manager for the JWT secret, network key and bank HMAC secret, CloudWatch logs.
-Migrations run as a one-off ECS task before the service update. Details come in
-milestone M9.
+Terraform in `infra/terraform/`: VPC with private subnets in two AZs, ECS
+Fargate (API service behind an HTTPS-only ALB, plus `migrate` and `jobs` task
+definitions from the same image), RDS Postgres 16 (Multi-AZ, encrypted,
+`force_ssl`, backups, deletion protection), Secrets Manager for every secret,
+EventBridge Scheduler for the jobs, CloudWatch logs and a job-failure alarm.
+Migrations run as a one-off task before the service update. Full description,
+release steps and trade-offs: [deployment.md](deployment.md).

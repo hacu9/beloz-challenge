@@ -32,8 +32,23 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm run lint
-      - run: npx prettier --check src test
+      - run: npx prettier --check src test scripts
       - run: npm audit --omit=dev
       - run: npm run typecheck
       - run: npm run build
       - run: npm test
+
+  # Q29, OPS-06: the AWS infrastructure must stay valid; it is never applied here.
+  terraform:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: infra/terraform
+    steps:
+      - uses: actions/checkout@v4
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.9.8
+      - run: terraform fmt -check -recursive
+      - run: terraform init -backend=false -input=false
+      - run: terraform validate

@@ -94,7 +94,7 @@ describe("capture", () => {
     await expectAccountConsistent(h, a.view.id);
   });
 
-  it("SPEND-06: a capture larger than the hold posts in full and can push the account over its limit", async () => {
+  it("SPEND-06 / SPEND-16: a capture larger than the hold posts in full and can push the account over its limit", async () => {
     const a = await withHold(100_000, 90_000);
     const res = await network(
       app,
@@ -130,7 +130,7 @@ describe("capture", () => {
     await expectAccountConsistent(h, a.view.id);
   });
 
-  it("OQ-08: a force post without an authorization posts; an unknown card is 422", async () => {
+  it("SPEND-14 / OQ-08: a force post without an authorization posts; an unknown card is 422", async () => {
     const a = await activeAccount(app, h, 100_000);
     const res = await network(
       app,
@@ -236,7 +236,7 @@ describe("reversal", () => {
     await expectAccountConsistent(h, a.view.id);
   });
 
-  it("SPEND-08: a captured authorization cannot be reversed (409); an unknown one is 404", async () => {
+  it("SPEND-15: a captured authorization cannot be reversed (409); an unknown one is 404", async () => {
     const a = await withHold(100_000, 30_000);
     await network(
       app,
@@ -249,7 +249,7 @@ describe("reversal", () => {
     expect((await network(app, `/authorizations/auth_${randomUUID()}/reversal`)).status).toBe(404);
   });
 
-  it("SPEND-08: reversing a declined authorization releases nothing", async () => {
+  it("SPEND-15: reversing a declined authorization releases nothing", async () => {
     const a = await activeAccount(app, h, 100_000);
     const declined = authorization({ cardToken: a.cardToken, amount: 200_000 });
     await authorize(app, declined);

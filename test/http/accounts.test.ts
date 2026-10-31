@@ -103,7 +103,7 @@ describe("open account", () => {
   });
 });
 
-describe("D-M6-3: payout CLABE", () => {
+describe("PAYOUT-12 / D-M6-3: payout CLABE", () => {
   it("opening an account requires an 18-digit payout CLABE; the view shows only its last 4", async () => {
     const auth = await bearer("customer", h.clock);
     for (const body of [{}, { payoutClabe: "123" }, { payoutClabe: "01218000123456789x" }]) {

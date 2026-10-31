@@ -146,7 +146,7 @@ describe("authorization", () => {
     expect(res.body).toMatchObject({ approved: false, declineReason: "account_not_active" });
   });
 
-  it("SPEND-05: an unknown card and an amount over the maximum are declined", async () => {
+  it("SPEND-05 / SPEND-13: an unknown card and an amount over the maximum are declined", async () => {
     const unknown = await authorize(app, authorization({ cardToken: "tok_unknown", amount: 100 }));
     expect(unknown.body).toMatchObject({ approved: false, declineReason: "card_not_found" });
 

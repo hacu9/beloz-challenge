@@ -145,7 +145,7 @@ Format: each requirement has an ID, one rule, and the source decision (`Q` =
 |---|---|---|
 | OPS-01 | All code shall read the time from an injectable clock. | Q27 |
 | OPS-02 | Every log line shall be JSON and carry the request ID. | Q26 |
-| OPS-03 | A reconciliation command shall check that (a) the ledger sums to zero, (b) each `held_total` equals the sum of open holds, (c) each cached balance equals its ledger sum. It shall exit non-zero on a mismatch. | Q25 |
-| OPS-04 | `docker compose up` shall start Postgres and the app with seed data. | Q28 |
-| OPS-05 | A demo script shall run the main flow end to end: open, deposit, activate, authorize, capture, repay, close, payout. | Q28 |
-| OPS-06 | CI shall run lint, type check, the tests against Postgres, and `terraform validate`. | Q30 |
+| OPS-03 | A reconciliation command shall check that (a) the ledger sums to zero, (b) each `held_total` equals the sum of open holds, (c) each cached balance equals its ledger sum, (d) each `charged_off_outstanding` equals its `charge_offs` log. It shall exit non-zero on a mismatch. | Q25 |
+| OPS-04 | `docker compose up` shall start Postgres, run the migrations and the seed, and start the app. | Q28 |
+| OPS-05 | A demo script (`npm run demo`) shall run the main flow end to end against the Compose stack: open, deposit, activate, authorize, capture, repay, close, payout, reconcile. It shall exit non-zero on any unexpected value. | Q28 |
+| OPS-06 | CI shall run lint, Prettier, `npm audit --omit=dev`, type check, build, the tests against Postgres, and `terraform fmt -check` + `validate`. | Q30 |

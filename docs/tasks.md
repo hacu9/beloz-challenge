@@ -152,17 +152,28 @@ race (reversal vs new authorizations on the same account), so that test was adde
 | Close without the balance checks, payout check kept | stays green (same reason, the other way round) |
 | Close without both | PAYOUT-07 and 2 more: the two barriers are independent |
 
-## M8 — Operability and demo
+## M8 — Operability and demo (done 2026-10-31)
 
-- [ ] Reconciliation command. (OPS-03)
-- [ ] Seed data + `docker compose up` works from a clean clone. (OPS-04)
-- [ ] Demo script for the main flow. (OPS-05)
-- [ ] README: how to run, how to test, links to `docs/`.
+- [x] Reconciliation command, exit 1 on drift. (OPS-03)
+- [x] Seed data + `docker compose up` runs migrations, seed and app. (OPS-04)
+- [x] Demo script for the main flow, checked step by step. (OPS-05)
+- [x] README: how to run, how to test, links to `docs/`.
+- [x] `jobs` Compose service: every scheduled job runs as a one-off container.
 
-## M9 — Cloud and CI
+**Checks (M8).**
 
-- [ ] Terraform for AWS (architecture §12). (Q29)
-- [ ] CI runs `terraform fmt -check` and `terraform validate`. (OPS-06)
+| Check | Result |
+|---|---|
+| Each of the five cached counters drifted by 1 centavo | `reconcile` reports exactly that check for that account (tests) |
+| Drift injected in the Compose database, `docker compose run --rm jobs reconcile` | exit 1; after restoring, exit 0 |
+| `npm run demo` against a freshly built stack | every step `ok`, ends with `reconcile` ok, exit 0 |
+
+OPS-05 (the demo) and OPS-06 (CI) are proved by running them, not by unit tests. FREEZE-01/02 are backlog. Every other requirement ID is named by at least one test (checked with a script over `test/`).
+
+## M9 — Cloud and CI (done 2026-10-31)
+
+- [x] Terraform for AWS: VPC, ALB, ECS Fargate (app, migrate, jobs), RDS, Secrets Manager, EventBridge Scheduler, job-failure alarm. (Q29, [deployment.md](deployment.md))
+- [x] CI runs `terraform fmt -check`, `init -backend=false` and `validate`. (OPS-06)
 
 ## M10 — Delivery
 
@@ -172,6 +183,7 @@ race (reversal vs new authorizations on the same account), so that test was adde
 
 ## Backlog (after the core, in this order)
 
+0. Decide OQ-13 (what `cancel` does to the money of a failed payout).
 1. Freeze / unfreeze. (FREEZE-01, FREEZE-02)
 2. Collateral top-up / limit increase. (OQ-02)
 3. Statements.

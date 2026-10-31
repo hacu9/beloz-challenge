@@ -166,7 +166,7 @@ describe("PAYOUT-10: credit nets against new debt until a payout takes it", () =
     await expectAccountConsistent(h, acc.view.id);
   });
 
-  it("D-M6-1: a credited collateral deposit never nets; it is returned", async () => {
+  it("PAYOUT-11 / D-M6-1: a credited collateral deposit never nets; it is returned", async () => {
     const acc = await activeAccount(app, h, 100_000);
     await bankTransfer(app, h.clock, { reference: acc.view.collateralReference, amount: 30_000 });
     await network("/captures", {
@@ -184,7 +184,7 @@ describe("PAYOUT-10: credit nets against new debt until a payout takes it", () =
 });
 
 describe("payout lifecycle", () => {
-  it("REPAY-04 / PAYOUT-05: the job reserves credit; the ledger moves only on completion", async () => {
+  it("REPAY-04 / PAYOUT-05 / PAYOUT-12 / PAYOUT-13: the job reserves credit and pays to the customer's CLABE; the ledger moves only on completion", async () => {
     const acc = await withCredit(15_000);
     const before = h.bank.requests.length;
     const result = await sendDuePayouts(h.deps, { accountIds: [acc.view.id] });
@@ -276,7 +276,7 @@ describe("PAYOUT-04: ops resolution", () => {
     expect(audit.rows.at(-1)).toEqual({ actor_type: "ops", action: "payout.completed" });
   });
 
-  it("ops retries a failed payout with the same payout ID; ops can cancel to free the credit", async () => {
+  it("PAYOUT-01: ops retries a failed payout with the same payout ID; ops can cancel to free the credit", async () => {
     const acc = await withCredit(6_000);
     h.bank.mode = "reject";
     await sendDuePayouts(h.deps, { accountIds: [acc.view.id] });
