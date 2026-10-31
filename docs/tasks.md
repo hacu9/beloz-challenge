@@ -249,6 +249,17 @@ D1 (a comment) and F2 (a digest pin) change no behaviour; F2 is proven by a buil
 | Close keeps `frozen_by` | FREEZE-03, close test (the DB CHECK refuses the write) |
 | Unfreeze keeps `frozen_by` | 5 tests (the DB CHECK refuses the write) |
 
+## Third review fixes (done 2026-10-31)
+
+- [x] H4: `app_config` allowlist and value shapes. H5: required `alert_email` subscriber.
+
+| Mutation | `terraform test` run that goes red |
+|---|---|
+| No allowlist of keys | unknown_key_in_app_config_is_refused |
+| No value shape check | secret_as_a_value_is_refused |
+| `alert_email` not validated | missing_alert_target_is_refused |
+| No subscriber on the topic | default_config_plans |
+
 ## M10 — Delivery
 
 - [ ] Export the Claude Code transcripts into `PROMPTS.md`, in order. (Q4)

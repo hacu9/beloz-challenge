@@ -38,8 +38,8 @@ flowchart LR
 | `database.tf` | RDS Postgres 16, Multi-AZ, gp3 encrypted, private, `rds.force_ssl`, 14-day backups, deletion protection, final snapshot |
 | `secrets.tf` | Generated secrets in Secrets Manager: app and owner DB URLs, app DB password, JWT, network key, bank HMAC secret |
 | `ecs.tf` | ECR (immutable tags, scan on push), log group, cluster, IAM roles, three task definitions from one image (`app`, `migrate`, `jobs`), ALB with HTTPS listener, API service with circuit-breaker rollback |
-| `jobs.tf` | EventBridge Scheduler: `expire-holds` every 15 min, `send-payouts` and `progress-closures` hourly, `reconcile` daily; an alarm when any job logs `job failed`, sent to an encrypted SNS topic (`alerts_topic_arn` output; optional `alert_email`) |
-| `tests/guards.tftest.hcl` | `terraform test` with mocked providers (no AWS access): the alarm has an action, the database is private and encrypted, and a secret-looking key in `app_config` is refused |
+| `jobs.tf` | EventBridge Scheduler: `expire-holds` every 15 min, `send-payouts` and `progress-closures` hourly, `reconcile` daily; an alarm when any job logs `job failed`, sent to an encrypted SNS topic with a required `alert_email` subscriber (add the paging tool as a second subscriber via `alerts_topic_arn`) |
+| `tests/guards.tftest.hcl` | `terraform test` with mocked providers (no AWS access): the alarm has an action and the topic a subscriber, the database is private and encrypted, `app_config` refuses unknown keys and badly shaped values, and a plan without `alert_email` is refused |
 
 ## Least privilege, end to end
 
@@ -50,7 +50,7 @@ flowchart LR
 - The task role has no AWS permissions: the code talks to Postgres and HTTP only.
 - The execution role reads exactly this service's secrets.
 - Nothing listens on plain HTTP; tasks and the database have no public IP.
-- `app_config` becomes plain-text task environment, so a validation rule refuses any key that looks like a secret (`SECRET`, `PASSWORD`, `TOKEN`, `KEY`, `DATABASE_URL`, `CREDENTIAL`).
+- `app_config` becomes plain-text task environment, so it accepts only the known non-secret settings, and each value must have its shape (`LOG_LEVEL` a log level, the rest whole numbers). A secret has no key there and cannot pass as a value.
 - The image builds from a base pinned by digest, so one commit always builds the same image. CI builds it on every push.
 
 ## Release

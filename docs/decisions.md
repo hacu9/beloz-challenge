@@ -170,6 +170,17 @@ Four opencode2 runs: C (HTTP, auth, idempotency, routes), D (ledger, audit, mone
 
 Lesson for the next brief: state each rule *with* its deliberate exceptions (E2 and E3 came from rules written without D-M6-1 and OQ-04).
 
+## Third blind review, changes since the second (2026-10-31)
+
+Two opencode2 runs, rules stated with their deliberate exceptions: G (freeze, frozen_by), H (the 8 second-review fixes).
+
+| ID | Finding | Verdict | Action |
+|---|---|---|---|
+| G | none | — | Freeze, ownership, 404/409/403, audit, locking, declines, settlement while frozen, closure, `frozen_by` rule, no journal entry: all checked clean. |
+| H1 | A correctly signed non-JSON body would be accepted | REJECTED | Precondition false: `rawBody` is captured only for `application/json`. Probe: signed `text/plain` and `octet-stream` bodies all get 401. |
+| H4 | `app_config` checks key names only; a secret as the value of `LOG_LEVEL` passes | CONFIRMED | Allowlist of keys plus a shape check per value; proven by `terraform test`. |
+| H5 | The alerts topic has no subscriber by default, so the alarm pages nobody | CONFIRMED | `alert_email` is required and validated; the subscription always exists. |
+
 ## OQ-13 answer (2026-10-31)
 
 | OQ | Decision |

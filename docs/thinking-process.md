@@ -24,7 +24,7 @@ Memory was allowed, but a lock inside one Node process tells you nothing once th
 
 ## What worried me most
 
-Payouts timing out. If the bank doesn't answer and we just retry, we might pay twice. So it sits as `unknown` until someone checks, nothing retries it automatically, and the bank gets our payout id so even a manual retry can't double pay.
+Payouts timing out. If the bank doesn't answer and we just retry, we might pay twice. So it sits as `unknown` until someone checks, nothing retries it automatically, and the bank gets our payout id so even a manual retry can't double pay, as long as the bank respects it.
 
 Incoming money is the same story backwards. The bank can send the same webhook twice, so we dedupe on its transaction id. And money we can't match still gets recorded, cause bouncing the webhook doesn't give the money back.
 

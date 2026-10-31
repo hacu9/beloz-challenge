@@ -71,21 +71,40 @@ variable "app_config" {
     PAYOUT_STUCK_MINUTES             = "5"
   }
 
-  # Review F1: these values become plain-text task environment. A secret must
-  # go through secrets.tf instead.
+  # Review F1 + H4: these values become plain-text task environment, so only
+  # known settings with a known shape are accepted. A secret has no key here
+  # and cannot pass as a value: it must go through secrets.tf.
   validation {
     condition = alltrue([
-      for k in keys(var.app_config) :
-      !can(regex("(?i)(SECRET|PASSWORD|TOKEN|KEY|DATABASE_URL|CREDENTIAL)", k))
+      for k in keys(var.app_config) : contains([
+        "LOG_LEVEL", "BANK_SIGNATURE_TOLERANCE_SECONDS", "HOLD_TTL_DAYS",
+        "CLOSING_CAPTURE_WINDOW_DAYS", "MIN_DEPOSIT_CENTAVOS", "MAX_AMOUNT_CENTAVOS",
+        "PAYOUT_STUCK_MINUTES",
+      ], k)
     ])
-    error_message = "app_config is plain text: put secrets in Secrets Manager (secrets.tf), not here."
+    error_message = "app_config accepts only the known, non-secret settings (see .env.example). Secrets go in secrets.tf."
+  }
+
+  validation {
+    condition = alltrue([
+      for k, v in var.app_config :
+      k == "LOG_LEVEL"
+      ? contains(["fatal", "error", "warn", "info", "debug", "trace", "silent"], v)
+      : can(regex("^[0-9]{1,12}$", v))
+    ])
+    error_message = "app_config values: LOG_LEVEL must be a log level, every other setting a whole number."
   }
 }
 
+# Review H5: required. An alarm topic with no subscriber pages nobody.
 variable "alert_email" {
-  description = "Optional address subscribed to the alerts topic. Empty: wire the topic to the paging tool instead."
+  description = "Address subscribed to the alerts topic (job failures, reconcile drift). Add the paging tool as a second subscriber."
   type        = string
-  default     = ""
+
+  validation {
+    condition     = can(regex("^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$", var.alert_email))
+    error_message = "alert_email must be an email address: without a subscriber, a failed job notifies nobody."
+  }
 }
 
 variable "job_schedules" {
