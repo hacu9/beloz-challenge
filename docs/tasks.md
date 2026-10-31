@@ -62,11 +62,25 @@ only when other files had written audit rows first (now it seeds its own row).
 | Drop the one-open-account index | COL-10 (both tests) |
 | Skip the card activation | COL-04 |
 
-## M4 — Authorization
+## M4 — Authorization (done 2026-10-31)
 
-- [ ] Authorize: lock, lazy expiry, check, hold. (SPEND-01..05, SPEND-11)
-- [ ] Concurrency test: 20 parallel authorizations, total never over the limit. (SPEND-03)
-- [ ] Mutation check: remove `FOR UPDATE`, confirm the concurrency test goes red, restore.
+- [x] Authorize: lock, lazy expiry, check, hold; every decision stored. (SPEND-01..05, SPEND-09, SPEND-11..13, COL-05, LEDGER-05)
+- [x] Concurrency test: 20 parallel authorizations, total never over the limit. (SPEND-03)
+- [x] Mutation check: remove `FOR UPDATE`, confirm the concurrency test goes red, restore.
+- [x] Credited deposits debit `cash_collateral` (D-M4-1).
+
+**Mutation checks (M4).**
+
+| Mutation | Test that goes red |
+|---|---|
+| No `FOR UPDATE` on the account lock | SPEND-03 (version check makes losers fail) |
+| No `FOR UPDATE` and no version check | SPEND-03: **20 of 20 approved** against a limit that fits 14 |
+| `credit_balance` counted as available | SPEND-12 |
+| `>=` instead of `>` on the credit check | SPEND-02, SPEND-12, SPEND-09 |
+| No advisory lock on the network ID | SPEND-11 (10 overlapping deliveries) |
+| No lazy expiry | SPEND-09 |
+| Expiry `<` instead of `<=` | SPEND-09 (boundary) |
+| No account status check | COL-05 / SPEND-05 |
 
 ## M5 — Capture, reversal, expiry, refund
 

@@ -80,6 +80,16 @@ accepted them on 2026-10-31.
 | D-M3-5 | A transfer amount has no maximum. | The money already landed (COL-06). `MAX_AMOUNT_CENTAVOS` applies to requests, not to money received. |
 | D-M3-6 | Card token `tok_<32 hex>` and a random last4, from a simulated issuer. | SEC-05: the service never sees a PAN. |
 
+## M4 build decisions (2026-10-31)
+
+| ID | Decision | Reason |
+|---|---|---|
+| D-M4-1 | A credited deposit to a collateral reference debits `cash_collateral`, not `cash_operating`. | The money physically landed in the segregated collateral bank account. Henry agreed 2026-10-31. |
+| D-M4-2 | A credit balance never counts as available credit (SPEND-12). | Henry 2026-10-31. A credit balance is money we owe back, not collateral. |
+| D-M4-3 | Every authorization decision is stored in `authorizations`, declines included. | A decline creates no hold, but a retry must still get the same answer (SPEND-11). |
+| D-M4-4 | An amount over `MAX_AMOUNT_CENTAVOS` is a decline, not a 422. | The card network expects a decision for a well-formed request. |
+| D-M4-5 | Holds expire lazily under the account lock before each decision; the sweep job (M5) is a convenience, not a guard. | Correctness must not depend on a job running on time. |
+
 ## Dependency audit (2026-10-31)
 
 | Package | Severity | Scope | Action |

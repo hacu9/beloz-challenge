@@ -157,12 +157,13 @@ export class Deposits {
     }
 
     // COL-07, COL-09: the money is the customer's. Credit it; the payout
-    // module (M6) pays the credit balance back.
+    // module (M6) pays the credit balance back. The cash landed in the
+    // segregated collateral bank account, so the ledger says so.
     const { journalId } = await this.ledger.post(tx, {
       kind: "deposit",
       accountId: account.id,
       lines: transfer(
-        await this.ledger.systemAccountId(tx, "cash_operating"),
+        await this.ledger.systemAccountId(tx, "cash_collateral"),
         own.customer_credit,
         amount,
       ),

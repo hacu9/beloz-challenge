@@ -77,6 +77,8 @@ holds (id uuid pk, account_id uuid not null, network_auth_id text unique not nul
        amount bigint not null check (amount > 0),
        status text not null check (status in ('open','captured','reversed','expired')),
        expires_at timestamptz not null, created_at timestamptz not null)
+authorizations (network_auth_id text pk, card_token text, account_id uuid null, amount bigint, approved bool,
+                decline_reason text, hold_id uuid unique, merchant jsonb, decided_at timestamptz)  -- every decision (SPEND-11)
 captures (id uuid pk, network_capture_id text unique not null, hold_id uuid, amount bigint check (amount > 0), journal_id uuid not null)
 refunds  (id uuid pk, network_refund_id text unique not null, amount bigint check (amount > 0), journal_id uuid not null)
 bank_transactions (bank_txn_id text pk, kind text not null, account_id uuid, amount bigint, journal_id uuid, received_at timestamptz)
@@ -137,7 +139,7 @@ so the whole ledger sums to zero.
 | Event | Debit | Credit |
 |---|---|---|
 | Deposit confirmed (`pending_collateral`, at or above minimum) | `cash_collateral` | `customer_collateral` |
-| Deposit, any other state or below minimum | `cash_operating` | `customer_credit` |
+| Deposit to a collateral reference, any other state or below minimum | `cash_collateral` | `customer_credit` |
 | Deposit, unknown reference | `cash_operating` | `unapplied_funds` |
 | Charge-off of uncovered debt | `chargeoff_loss` | `customer_receivable` |
 | Capture | `customer_receivable` | `network_payable` |
@@ -218,7 +220,12 @@ UPDATE idempotency key with the response
 COMMIT
 ```
 
-- Lock order is always: idempotency key, then account row. One account per
+- **Authorization** (`POST /v1/network/authorizations`): advisory lock on the
+  `network_auth_id`, stored decision lookup, card token → account, account row
+  lock, lazy hold expiry, then the checks in this order: account `active`, card
+  `active`, amount ≤ `MAX_AMOUNT_CENTAVOS`, amount ≤ available credit. Every
+  decision is stored in `authorizations`; only an approval creates a hold.
+- Lock order is always: idempotency key (or the network/bank ID advisory lock), then account row. One account per
   transaction. So no deadlock between two money calls.
 - The account row lock is the guard for SPEND-03. The test fires 20 parallel
   authorizations whose sum exceeds the limit and asserts that
@@ -291,7 +298,7 @@ returns 422 (IDEM-04). A network or bank duplicate returns the first result.
 
 All jobs read the injectable clock and take the account lock like any other writer.
 
-- `expire-holds`: marks overdue holds `expired` and lowers `held_total`. The authorize path also expires holds lazily, so correctness does not depend on the job.
+- `expire-holds`: marks overdue holds `expired` and lowers `held_total`. The authorize path also expires holds lazily, so correctness does not depend on the job. Until the job runs, `GET /v1/accounts/:id` can show an overdue hold in `heldTotal`; the next authorization never sees it.
 - `progress-closures`: moves `closing` → `settling`, posts the collateral application, requests the payouts.
 - `reconcile`: OPS-03.
 

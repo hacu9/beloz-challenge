@@ -193,6 +193,16 @@ describe("collateral deposit", () => {
     const after = (await getAccount(app, auth, view.id)).body as AccountView;
     expect(after).toMatchObject({ creditLimit: 100_000, creditBalance: 30_000 });
     await expectCacheMatchesLedger(view.id);
+
+    // The cash landed in the segregated collateral bank account.
+    const cashCollateral = await ledger.systemAccountId(h.pool, "cash_collateral");
+    const { rows } = await h.pool.query(
+      `SELECT jl.amount FROM bank_transactions bt
+       JOIN journal_lines jl ON jl.journal_id = bt.journal_id
+       WHERE bt.bank_txn_id = $1 AND jl.ledger_account_id = $2`,
+      [res.body.bankTxnId, cashCollateral],
+    );
+    expect(rows).toEqual([{ amount: 30_000 }]);
   });
 
   it("COL-08: an unknown reference goes to unapplied_funds and is flagged", async () => {

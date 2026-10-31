@@ -33,3 +33,37 @@ export function bankTransfer(app: Express, clock: FixedClock, args: TransferArgs
 export async function getAccount(app: Express, auth: string, id: string) {
   return request(app).get(`/v1/accounts/${id}`).set("Authorization", auth);
 }
+
+/** An active account with the given collateral, plus the card token the network uses. */
+export async function activeAccount(
+  app: Express,
+  h: { clock: FixedClock; pool: import("pg").Pool },
+  collateral: number,
+): Promise<{ auth: string; view: AccountView; cardToken: string }> {
+  const auth = await bearer("customer", h.clock);
+  const view = await openAccount(app, auth);
+  const res = await bankTransfer(app, h.clock, { reference: view.collateralReference, amount: collateral });
+  if (res.body.outcome !== "collateral_confirmed") throw new Error(`activation failed: ${res.text}`);
+  const { rows } = await h.pool.query<{ token: string }>(
+    "SELECT token FROM cards WHERE account_id = $1",
+    [view.id],
+  );
+  return { auth, view, cardToken: rows[0]!.token };
+}
+
+export function authorization(args: { cardToken: string; amount: number; networkAuthId?: string }) {
+  return {
+    networkAuthId: args.networkAuthId ?? `auth_${randomUUID()}`,
+    cardToken: args.cardToken,
+    amount: args.amount,
+    currency: "MXN" as const,
+    merchant: { name: "Tienda Demo", mcc: "5411" },
+  };
+}
+
+export function authorize(app: Express, body: ReturnType<typeof authorization>) {
+  return request(app)
+    .post("/v1/network/authorizations")
+    .set("X-Network-Key", testConfig.networkApiKey)
+    .send(body);
+}

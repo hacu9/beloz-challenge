@@ -54,7 +54,9 @@ Format: each requirement has an ID, one rule, and the source decision (`Q` =
 | SPEND-08 | A reversal shall release an open hold and remove its amount from `held_total`. It shall not write to the ledger. | Q15 |
 | SPEND-09 | A hold shall expire `HOLD_TTL_DAYS` after its creation. An expired hold shall not count in `held_total`. | Q15, P7 |
 | SPEND-10 | A refund shall post a credit to the customer. A refund larger than the debt shall put the excess in the customer credit balance. | Q15, Q18 |
-| SPEND-11 | Each network authorization ID, capture ID and refund ID shall be processed only once. | Q14 |
+| SPEND-11 | Each network authorization ID, capture ID and refund ID shall be processed only once. A retried authorization shall get the first decision, approved or declined. | Q14 |
+| SPEND-12 | A credit balance (overpayment, credited deposit) shall never raise available credit. Available credit is `credit_limit - posted_debt - held_total` and never includes `credit_balance`. | Henry 2026-10-31 |
+| SPEND-13 | An authorization shall be declined, not rejected, when the card is unknown or not active, the account is not `active`, the amount is over `MAX_AMOUNT_CENTAVOS`, or credit is insufficient. A malformed request returns 422. | Q15 |
 
 ## 5. Repayment (REPAY)
 

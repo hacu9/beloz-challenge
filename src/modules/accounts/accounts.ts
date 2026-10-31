@@ -282,6 +282,14 @@ export class Accounts {
     return Promise.all(rows.map(async (a) => ({ account: a, card: await this.card(db, a.id) })));
   }
 
+  async accountIdForCardToken(db: Queryable, token: string): Promise<string | undefined> {
+    const { rows } = await db.query<{ account_id: string }>(
+      "SELECT account_id FROM cards WHERE token = $1",
+      [token],
+    );
+    return rows[0]?.account_id;
+  }
+
   async card(db: Queryable, accountId: string): Promise<Card> {
     const { rows } = await db.query<Card>(
       "SELECT id, account_id, token, last4, status FROM cards WHERE account_id = $1",
