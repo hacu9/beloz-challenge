@@ -70,7 +70,7 @@ are in [`docs/tasks.md`](docs/tasks.md).
 
 | Caller | Auth | Endpoints |
 |---|---|---|
-| Customer | JWT (`role=customer`) | `POST /v1/accounts`, `GET /v1/accounts[/:id]`, `POST /v1/accounts/:id/close` |
+| Customer | JWT (`role=customer`) | `POST /v1/accounts`, `GET /v1/accounts[/:id]`, `POST /v1/accounts/:id/close`, `/freeze`, `/unfreeze` |
 | Ops | JWT (`role=ops`) | `GET /v1/accounts/:id`, `/v1/ops/payouts`, `/v1/ops/payouts/:id/resolve`, `/v1/ops/payouts/:id/release`, `/v1/ops/unapplied-funds` |
 | Card network | `X-Network-Key` | `/v1/network/authorizations`, `…/:id/reversal`, `/v1/network/captures`, `/v1/network/refunds` |
 | Bank | HMAC signature over the raw body | `/v1/bank/webhooks` (`transfer.received`, `payout.completed`, `payout.failed`) |

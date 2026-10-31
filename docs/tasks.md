@@ -168,7 +168,7 @@ race (reversal vs new authorizations on the same account), so that test was adde
 | Drift injected in the Compose database, `docker compose run --rm jobs reconcile` | exit 1; after restoring, exit 0 |
 | `npm run demo` against a freshly built stack | every step `ok`, ends with `reconcile` ok, exit 0 |
 
-OPS-05 (the demo) and OPS-06 (CI) are proved by running them, not by unit tests. FREEZE-01/02 are backlog. Every other requirement ID is named by at least one test (checked with a script over `test/`).
+OPS-05 (the demo) and OPS-06 (CI) are proved by running them, not by unit tests. Every other requirement ID is named by at least one test (checked with a script over `test/`).
 
 ## M9 — Cloud and CI (done 2026-10-31)
 
@@ -224,6 +224,21 @@ D1 (a comment) and F2 (a digest pin) change no behaviour; F2 is proven by a buil
 | No advisory lock on the capture ID | red (duplicate captures collide) |
 | Capture does not net credit | red (debt and credit both above zero) |
 
+## Freeze (done 2026-10-31)
+
+- [x] `POST /v1/accounts/:id/freeze` and `/unfreeze`, customer (own) or ops; purchases declined with `account_frozen`; captures, reversals, refunds and repayments still settle; a frozen account can close. (FREEZE-01..03)
+
+**Mutation checks.**
+
+| Mutation | Test that goes red |
+|---|---|
+| Frozen check removed (falls back to `account_not_active`) | FREEZE-02 decline reason |
+| Frozen account may purchase | FREEZE-02 decline |
+| Freeze ignores ownership | FREEZE-01 (another customer gets 404) |
+| Freeze ignores the current state | FREEZE-01 409s, FREEZE-03 |
+| `frozen → closing` removed | FREEZE-03 |
+| Over-eager: captures refused while frozen | FREEZE-02 (money that already moved still settles) |
+
 ## M10 — Delivery
 
 - [ ] Export the Claude Code transcripts into `PROMPTS.md`, in order. (Q4)
@@ -232,7 +247,7 @@ D1 (a comment) and F2 (a digest pin) change no behaviour; F2 is proven by a buil
 
 ## Backlog (after the core, in this order)
 
-1. Freeze / unfreeze. (FREEZE-01, FREEZE-02)
+1. ~~Freeze / unfreeze~~ done 2026-10-31 (see below).
 2. Collateral top-up / limit increase. (OQ-02)
 3. Statements.
 4. Interest (needs a rounding rule first).

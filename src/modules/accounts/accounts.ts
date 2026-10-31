@@ -3,7 +3,7 @@ import type pg from "pg";
 import type { Clock } from "../../platform/clock.js";
 import type { Queryable } from "../../platform/db/pool.js";
 import type { Tx } from "../../platform/db/tx.js";
-import { conflict } from "../../platform/errors.js";
+import { conflict, notFound } from "../../platform/errors.js";
 import type { Centavos } from "../../platform/money.js";
 import type { Actor, AuditLog } from "../audit/audit.js";
 import type { Ledger } from "../ledger/ledger.js";
@@ -318,6 +318,34 @@ export class Accounts {
       [token],
     );
     return rows[0]?.account_id;
+  }
+
+  // FREEZE-01: active <-> frozen, by the customer (own account) or ops.
+  // Captures, refunds, reversals and repayments ignore the status, so money
+  // that already moved still settles while the account is frozen (FREEZE-02).
+  async setFrozen(
+    tx: Tx,
+    accountId: string,
+    frozen: boolean,
+    caller: { type: "customer" | "ops"; id: string },
+  ): Promise<Account> {
+    const account = await this.lock(tx, accountId);
+    if (!account || (caller.type === "customer" && account.customer_id !== caller.id)) {
+      throw notFound("account not found");
+    }
+    const from: AccountStatus = frozen ? "active" : "frozen";
+    if (account.status !== from) {
+      throw conflict(
+        frozen ? "account_not_freezable" : "account_not_frozen",
+        `the account is ${account.status}`,
+      );
+    }
+    return this.update(
+      tx,
+      account,
+      { status: frozen ? "frozen" : "active" },
+      { actor: caller, action: frozen ? "account.frozen" : "account.unfrozen" },
+    );
   }
 
   async card(db: Queryable, accountId: string): Promise<Card> {

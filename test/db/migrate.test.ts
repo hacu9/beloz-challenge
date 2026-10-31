@@ -27,13 +27,13 @@ describe("migrations", () => {
     expect(await migrateWith({})).toEqual([]);
   });
 
-  it("review D4: refuses a new migration that sorts before an applied one", async () => {
+  it("OPS-07 / review D4: refuses a new migration that sorts before an applied one", async () => {
     await expect(migrateWith({ "000_late.sql": "SELECT 1;" })).rejects.toThrow(
       /000_late\.sql sorts before the applied/,
     );
   });
 
-  it("refuses an applied migration whose file changed", async () => {
+  it("OPS-07: refuses an applied migration whose file changed", async () => {
     const dir = mkdtempSync(path.join(tmpdir(), "acme-migrations-"));
     for (const f of readdirSync(MIGRATIONS_DIR))
       copyFileSync(path.join(MIGRATIONS_DIR, f), path.join(dir, f));

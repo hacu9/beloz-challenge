@@ -107,12 +107,13 @@ Format: each requirement has an ID, one rule, and the source decision (`Q` =
 | CLOSE-08 | A capture, refund or repayment in `settling` or `closed` shall post. A credit that results shall trigger a new payout. | OQ-05 |
 | CLOSE-06 | The service shall never release collateral while the account has debt. | Q19, Q24 |
 
-## 7. Freeze (FREEZE) — backlog, first extra
+## 7. Freeze (FREEZE)
 
 | ID | Requirement | Source |
 |---|---|---|
-| FREEZE-01 | A customer or ops shall be able to freeze an `active` account and unfreeze a `frozen` account. | Q2, Q20 |
-| FREEZE-02 | A `frozen` account shall decline all new authorizations and still post captures, reversals, refunds and repayments. | Q2, Q15 |
+| FREEZE-01 | A customer (own account only, else 404) or ops shall be able to freeze an `active` account and unfreeze a `frozen` account. Any other state returns 409. Both calls need an `Idempotency-Key` and write an audit row. | Q2, Q20, Henry 2026-10-31 |
+| FREEZE-02 | A `frozen` account shall decline all new authorizations with reason `account_frozen`, and still post captures, reversals, refunds and repayments, because that money already moved. The card stays `active`. | Q2, Q15, Henry 2026-10-31 |
+| FREEZE-03 | A `frozen` account can be closed; closing blocks the card and ends the freeze. | Henry 2026-10-31 |
 
 ## 8. Security (SEC)
 

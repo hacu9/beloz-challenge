@@ -5,4 +5,4 @@ Each question blocks the tasks that name it. When Henry answers one, move it to
 
 | ID | Question | AI lean | Blocks |
 |---|---|---|---|
-| — | No open question. | — | — |
+| OQ-14 | A customer can unfreeze a freeze that ops placed (for example for suspected fraud). Should an ops freeze be locked against the customer? | Yes: record who froze it; a customer may lift only their own freeze, ops may lift any. One column and one check. | Nothing yet |

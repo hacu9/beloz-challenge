@@ -23,7 +23,8 @@ export type DeclineReason =
   | "card_not_active"
   | "account_not_active"
   | "insufficient_credit"
-  | "amount_over_maximum";
+  | "amount_over_maximum"
+  | "account_frozen";
 
 export interface AuthorizationDecision {
   networkAuthId: string;
@@ -63,6 +64,10 @@ export class Authorizations {
     account = await this.expireHolds(tx, account);
 
     // COL-05, SPEND-05: only an active account with an active card can spend.
+    // FREEZE-02: a frozen account declines new purchases; nothing else changes.
+    if (account.status === "frozen") {
+      return this.record(tx, req, account.id, { decline: "account_frozen" });
+    }
     if (account.status !== "active") {
       return this.record(tx, req, account.id, { decline: "account_not_active" });
     }

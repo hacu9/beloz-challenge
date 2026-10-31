@@ -339,6 +339,7 @@ mounted in `src/http/app.ts`. Every customer/ops write needs `Idempotency-Key`.
 | GET | `/v1/accounts` | customer (own accounts only) |
 | GET | `/v1/accounts/:id` | customer (own), ops |
 | POST | `/v1/accounts/:id/close` | customer (own), ops |
+| POST | `/v1/accounts/:id/freeze`, `/unfreeze` | customer (own), ops (FREEZE-01) |
 | POST | `/v1/network/authorizations` | network |
 | POST | `/v1/network/authorizations/:networkAuthId/reversal` | network |
 | POST | `/v1/network/captures` | network (`networkAuthId` optional: force post) |
@@ -349,8 +350,7 @@ mounted in `src/http/app.ts`. Every customer/ops write needs `Idempotency-Key`.
 | POST | `/v1/ops/payouts/:id/release` | ops (body: `note`, optional `payoutClabe`; ends the parking of a cancelled payout) |
 | GET | `/v1/ops/unapplied-funds` | ops |
 
-Not built (backlog): `POST /v1/accounts/:id/freeze` and `/unfreeze` (FREEZE-01),
-and a customer transaction history endpoint.
+Not built (backlog): a customer transaction history endpoint.
 
 ## 11. Background jobs
 
