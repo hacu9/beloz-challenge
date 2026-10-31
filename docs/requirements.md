@@ -75,6 +75,8 @@ Format: each requirement has an ID, one rule, and the source decision (`Q` =
 | PAYOUT-05 | The money of a payout that is not `completed` shall stay reserved. The ledger shall post the payout only when it is `completed`. | OQ-06 |
 | PAYOUT-06 | Each payout request to the bank shall carry the payout ID as the bank idempotency key. | OQ-06 |
 | PAYOUT-07 | The service shall not move an account to `closed` while a payout of that account is not `completed`. | OQ-06, Q19 |
+| PAYOUT-08 | A signed bank result webhook shall resolve a payout only while it is `unknown` or `requested`. | OQ-12 |
+| PAYOUT-09 | When a bank result webhook arrives for a payout that a person already resolved, the service shall not change the payout. If the results differ, it shall flag a mismatch for ops and write an audit row. | OQ-12 |
 
 ## 6. Closure and collateral release (CLOSE)
 

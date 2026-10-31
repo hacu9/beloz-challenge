@@ -66,3 +66,5 @@ accepted them on 2026-10-31.
 | OQ-09 | Captures per hold | One capture closes the hold. Multi-capture goes in the backlog. |
 | OQ-10 | Minimum deposit | `MIN_DEPOSIT_CENTAVOS` from config (default 50000 = 500 MXN). |
 | OQ-11 | `frozen` in the first migration | Yes. The endpoints stay in the backlog. |
+| OQ-12 | Late bank webhook for a payout | The webhook resolves the payout only while it is still `unknown`. If a person already resolved it, the webhook changes nothing; when its result differs from the person's, the service flags the mismatch for ops. |
+| COL-09 | Deposit below the minimum | Accepted as proposed: credit balance + payback, the account stays `pending_collateral`. |

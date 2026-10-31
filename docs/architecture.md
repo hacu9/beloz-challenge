@@ -93,8 +93,17 @@ audit_log (id bigserial pk, actor text, action text, entity text, entity_id uuid
 ```
 
 - A deferred constraint trigger checks that the lines of each journal sum to zero at commit (LEDGER-02).
+- A trigger lets a line join only an entry created in the same transaction, so a committed entry never changes (LEDGER-03).
+- Timestamps have no `DEFAULT now()`. The app writes them from the clock (OPS-01).
 - A trigger rejects `UPDATE` and `DELETE` on `journal_entries`, `journal_lines` and `audit_log` (LEDGER-04, AUDIT-03).
-- The app DB role gets `INSERT, SELECT` only on those tables, as a second barrier.
+- The app DB role `acme_app` gets `INSERT, SELECT` only on those tables, as a second barrier.
+  The migration step creates the role (`ensureAppRole`) and runs as the owner.
+- `pg` parses `int8` and `numeric` per pool with a strict safe-integer parser (§4).
+
+**Test strategy.** The tests run against a real Postgres 16. Each run drops and
+re-creates `acme_test` and migrates it like production. The ledger cannot be
+truncated, so tests never reset data: each test creates and checks its own rows.
+A guard test counts only if a mutation of the guard turns it red (see tasks.md).
 
 ## 4. Money
 
@@ -154,8 +163,8 @@ stateDiagram-v2
   requested --> completed: bank says paid
   requested --> failed: bank says rejected
   requested --> unknown: timeout / unclear answer
-  unknown --> completed: ops resolves (or webhook, OQ-12)
-  unknown --> failed: ops resolves (or webhook, OQ-12)
+  unknown --> completed: bank webhook or ops
+  unknown --> failed: bank webhook or ops
 ```
 
 - The service never retries a payout on its own (PAYOUT-03). A timeout is
@@ -163,6 +172,9 @@ stateDiagram-v2
 - Each bank request carries the payout ID as its idempotency key (PAYOUT-06). So
   if ops decides to retry, the bank can still dedupe.
 - An ops resolution writes an audit row with the evidence reference (PAYOUT-04).
+- A late bank webhook resolves a payout only while it is `unknown` (PAYOUT-08).
+  After a person resolved it, the webhook changes nothing; a different result
+  raises a mismatch flag for ops (PAYOUT-09).
 
 ## 6. State machine
 

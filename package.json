@@ -1,0 +1,41 @@
+{
+  "name": "acme-credit-secured-card",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Acme Credit secured credit card service",
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "start": "node dist/server.js",
+    "dev": "tsx watch src/server.ts",
+    "db:migrate": "tsx src/platform/db/migrate-cli.ts",
+    "lint": "eslint .",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "format": "prettier --write ."
+  },
+  "dependencies": {
+    "express": "^5.3.0",
+    "jose": "^5.10.0",
+    "pg": "^8.23.1",
+    "pino": "^9.14.0",
+    "zod": "^3.25.76"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.39.5",
+    "@types/express": "^5.0.6",
+    "@types/node": "^22.20.5",
+    "@types/pg": "^8.23.1",
+    "@types/supertest": "^6.0.3",
+    "eslint": "^9.39.5",
+    "prettier": "^3.9.10",
+    "supertest": "^7.3.1",
+    "tsx": "^4.23.15",
+    "typescript": "^5.9.3",
+    "typescript-eslint": "^8.72.1",
+    "vitest": "^3.2.7"
+  }
+}

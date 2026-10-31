@@ -10,23 +10,37 @@ and add the commit sha.
 - [x] Write requirements, architecture, decisions and open questions.
 - [x] Answer OQ-01 to OQ-11.
 
-## M1 — Foundation
+## M1 — Foundation (done 2026-10-31)
 
-- [ ] TypeScript + Express scaffold, strict `tsconfig`, ESLint, Prettier.
-- [ ] `docker-compose.yml`: Postgres 16 + app. `.env.example` with comments.
-- [ ] Migration runner and the first schema (architecture §3), incl. `frozen` in the status CHECK (OQ-11).
-- [ ] Ledger triggers: zero-sum at commit, no `UPDATE`/`DELETE` on ledger and audit tables. Least-privilege DB role. (LEDGER-02, LEDGER-04, AUDIT-03)
-- [ ] Platform: config, clock (OPS-01), pino logger with request ID (OPS-02), `pg` bigint parser + money helpers (MONEY-01..05), transaction helper.
-- [ ] Test harness: vitest against the Compose Postgres, one clean schema per test file.
-- [ ] GitHub Actions: lint, type check, tests with a Postgres service container.
+- [x] TypeScript + Express scaffold, strict `tsconfig`, ESLint, Prettier.
+- [x] `docker-compose.yml`: Postgres 16 + app. `.env.example` with comments.
+- [x] Migration runner and the first schema (architecture §3), incl. `frozen` in the status CHECK (OQ-11).
+- [x] Ledger triggers: zero-sum at commit, no `UPDATE`/`DELETE` on ledger and audit tables. Least-privilege DB role. (LEDGER-02, LEDGER-04, AUDIT-03)
+- [x] Platform: config, clock (OPS-01), pino logger with request ID (OPS-02), `pg` bigint parser + money helpers (MONEY-01..05), transaction helper.
+- [x] Test harness: vitest against the Compose Postgres, one clean schema per test file.
+- [x] GitHub Actions: lint, type check, tests with a Postgres service container.
 
-## M2 — Cross-cutting core
+## M2 — Cross-cutting core (done 2026-10-31)
 
-- [ ] Ledger module: chart of accounts, `post(tx, entry)`, balance queries. (LEDGER-01..06)
-- [ ] Audit writer. (AUDIT-01, AUDIT-02)
-- [ ] Auth middleware: JWT roles, network key, bank HMAC. `fake-login`. (SEC-01..04, SEC-06)
-- [ ] Idempotency middleware + store. (IDEM-01..05)
-- [ ] Error model: one JSON error shape, no stack traces in responses.
+- [x] Ledger module: chart of accounts, `post(tx, entry)`, balance queries. (LEDGER-01..06)
+- [x] Audit writer. (AUDIT-01, AUDIT-02)
+- [x] Auth middleware: JWT roles, network key, bank HMAC. `fake-login`. (SEC-01..04, SEC-06)
+- [x] Idempotency middleware + store. (IDEM-01..05)
+- [x] Error model: one JSON error shape, no stack traces in responses.
+
+**Mutation checks (M1/M2).** Each guard was broken on purpose; the named test went red, then the code was restored.
+
+| Mutation | Test that goes red |
+|---|---|
+| Skip the body-hash compare | IDEM-04 |
+| Check-then-insert the idempotency key (race) | IDEM-05 |
+| Remove the zero-sum constraint triggers | LEDGER-02 (both DB tests) |
+| Grant UPDATE/DELETE on ledger and audit to `acme_app` | LEDGER-04 / AUDIT-03 (app role) |
+
+Two test defects found this way and fixed: IDEM-05 did not force overlap (now the
+probe holds the transaction with `pg_sleep`), and the audit trigger test passed
+only when other files had written audit rows first (now it seeds its own row).
+
 
 ## M3 — Accounts and collateral
 
@@ -54,7 +68,7 @@ and add the commit sha.
 - [ ] Repayment webhook. (REPAY-01..03)
 - [ ] Payout module: request with payout ID as bank idempotency key, four states, timeout → `unknown`, no auto-retry. (REPAY-04, PAYOUT-01..06)
 - [ ] Ops endpoints: list and resolve `unknown`/`failed` payouts, list `unapplied_funds`. (PAYOUT-04, COL-08)
-- [ ] Late payout webhook on an `unknown` payout. — blocked by OQ-12
+- [ ] Late payout webhook: resolve only `unknown`, flag a mismatch after a manual resolution. (PAYOUT-08, PAYOUT-09)
 
 ## M7 — Closure
 
