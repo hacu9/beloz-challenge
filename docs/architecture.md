@@ -59,7 +59,7 @@ Rule: only `ledger/` writes to the ledger tables. Other modules call
 
 ## 3. Data model
 
-Source of truth: `db/migrations/001..006`. Summary (CHECKs abbreviated):
+Source of truth: `db/migrations/001..007`. Summary (CHECKs abbreviated):
 
 ```sql
 accounts (id uuid pk, customer_id uuid,           -- one non-closed account per customer (partial unique index)
@@ -82,12 +82,13 @@ authorizations (network_auth_id pk, card_token, account_id null, amount, approve
 captures (id, network_capture_id unique, account_id, hold_id unique null, network_auth_id,
           card_token, amount > 0, journal_id, created_at)
 refunds (id, network_refund_id unique, network_capture_id, account_id, card_token, amount > 0,
-         debt_reduced, credited, journal_id, created_at)                          -- debt_reduced + credited = amount
+         debt_reduced, recovered, credited, journal_id, created_at)              -- the three parts = amount
 bank_transactions (bank_txn_id pk, kind deposit|payout_result, reference, account_id, amount,
                    outcome (closed list), journal_id, received_at)               -- COL-03 dedupe
 payouts (id, account_id, kind collateral|credit|return, amount > 0,
          status requested|completed|failed|unknown|cancelled, source_cash, destination_clabe,
-         return_of unique -> bank_transactions, submitted_at, bank_txn_id unique, journal_id,
+         return_of -> bank_transactions (unique while not released), submitted_at, released_at,
+         bank_txn_id unique, journal_id,
          resolved_by, resolution_note, mismatch, created_at, updated_at)        -- completed <=> journal_id
 charge_offs (id, account_id, kind charge_off|recovery, amount > 0, journal_id, created_at)   -- append-only by grant
 ledger_accounts (id, code (closed list), account_id null for system, type asset|liability|expense,
@@ -151,7 +152,10 @@ so the whole ledger sums to zero.
 | Deposit to a collateral reference, any other state or below minimum | `cash_collateral` | `customer_credit` |
 | Deposit, unknown reference | `cash_operating` | `unapplied_funds` |
 | Charge-off of uncovered debt | `chargeoff_loss` | `customer_receivable` |
-| Recovery of charged-off debt (CLOSE-09) | `cash_operating` | `chargeoff_loss` |
+| Recovery of charged-off debt by repayment (CLOSE-09) | `cash_operating` | `chargeoff_loss` |
+| Recovery by refund (B2) | `network_payable` | `chargeoff_loss` (then receivable / credit for the rest) |
+| Recovery by collateral-reference deposit (B3) | `cash_collateral` | `chargeoff_loss` (rest to `customer_credit`, returned) |
+| Recovery from collateral that came back (A1) | `customer_collateral` + `cash_operating` | `chargeoff_loss` + `cash_collateral` |
 | Collateral payout completed | `customer_collateral` | `cash_collateral` |
 | Capture | `customer_receivable` | `network_payable` |
 | Refund (up to debt) | `network_payable` | `customer_receivable` |
@@ -181,7 +185,9 @@ stateDiagram-v2
   unknown --> completed: bank webhook or ops
   unknown --> failed: bank webhook or ops
   failed --> requested: ops retry (same payout ID)
-  failed --> cancelled: ops cancel
+  failed --> cancelled: ops cancel (money parked)
+  failed --> cancelled: system, collateral needed for debt (released at once, A1)
+  cancelled --> cancelled: ops release (parking ends; jobs pay again)
 ```
 
 - The service never retries a payout on its own (PAYOUT-03). A timeout is
@@ -194,10 +200,17 @@ stateDiagram-v2
   never nets) and the rest. Of the rest, money in an open credit payout is
   reserved; what is left is *free* and nets against new debt at capture time
   (PAYOUT-10). Netting stops the moment the job creates a payout.
-- **Known gaps for ops.** A payout stuck in `requested` with no `submitted_at`
-  (the process died between commit and the bank call) appears in
-  `GET /v1/ops/payouts?status=requested`; nothing resends it. A cancelled
-  `return` keeps its credit returnable and is not re-created; a person decides.
+- **Parking (OQ-13, PAYOUT-15).** A payout holds its money while `requested`,
+  `unknown`, `failed`, or `cancelled` and not yet released. Held money does not
+  net, is not paid out again and keeps the account from closing. Ops releases a
+  parked payout (`POST /v1/ops/payouts/:id/release`), optionally with a new
+  payout CLABE; released credit first nets against debt, then the jobs create a
+  fresh payout (a new ID). A released return no longer blocks a new return of
+  the same deposit (partial unique index on `return_of`).
+- **Sending (PAYOUT-17).** `submit` claims the payout with one
+  `UPDATE … WHERE submitted_at IS NULL` before the bank call, so concurrent
+  senders make one bank request. A crash after the claim shows as
+  `no_bank_result` in the stuck list; nothing resends it.
 - A late bank webhook resolves a payout only while it is `requested` or `unknown` (PAYOUT-08).
   After a person resolved it, the webhook changes nothing; a different result
   raises a mismatch flag for ops (PAYOUT-09).
@@ -332,6 +345,7 @@ mounted in `src/http/app.ts`. Every customer/ops write needs `Idempotency-Key`.
 | POST | `/v1/bank/webhooks` | bank (`transfer.received`, `payout.completed`, `payout.failed`) |
 | GET | `/v1/ops/payouts?status=…&mismatch=…&stuck=…&accountId=…` | ops |
 | POST | `/v1/ops/payouts/:id/resolve` | ops (body: `action` completed/failed/retry/cancel, `note`) |
+| POST | `/v1/ops/payouts/:id/release` | ops (body: `note`, optional `payoutClabe`; ends the parking of a cancelled payout) |
 | GET | `/v1/ops/unapplied-funds` | ops |
 
 Not built (backlog): `POST /v1/accounts/:id/freeze` and `/unfreeze` (FREEZE-01),
@@ -346,7 +360,7 @@ All jobs read the injectable clock and take the account lock like any other writ
 - `expire-holds`: marks overdue holds `expired` and lowers `held_total`. The authorize path also expires holds lazily, so correctness does not depend on the job. Until the job runs, `GET /v1/accounts/:id` can show an overdue hold in `heldTotal`; the next authorization never sees it.
 - `progress-closures`: one idempotent step per account, under the account lock:
   1. `closing` → `settling` once no hold is open and the late-capture window has passed (skipped if the card never activated);
-  2. in `settling` (and on `closed` accounts where late money arrived, CLOSE-08): net free credit, apply unreserved collateral to the debt, charge off what is left (`charge_offs` row, `charged_off_outstanding`), create the collateral, credit and return payouts;
+  2. in `settling` (and on `closed` accounts where late money arrived, CLOSE-08): net free credit; if money is owed, take back the collateral of `failed` collateral payouts (A1); apply unheld collateral to the debt; recover charged-off debt from collateral that is left; charge off what debt is still left (`charge_offs` row, `charged_off_outstanding`); create the collateral, credit and return payouts;
   3. `settling` → `closed` when debt, holds, collateral and credit are all 0 and no payout is open.
   Payouts are sent after the commit. Collateral already in a payout is never pulled back: debt that appears after it left is charged off.
 - `reconcile` (OPS-03): read-only. Checks the ledger sums to zero and, per account, `credit_limit`, `posted_debt`, `credit_balance` against the ledger, `held_total` against open holds, `charged_off_outstanding` against the `charge_offs` log, and `credit_returnable <= credit_balance`. Exits 1 on any mismatch; the AWS alarm fires on that.

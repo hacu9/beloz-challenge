@@ -6,6 +6,7 @@ import type { Actor, AuditLog } from "../audit/audit.js";
 import { transfer, type Ledger } from "../ledger/ledger.js";
 import type { Payout, Payouts } from "../payouts/payouts.js";
 import type { Authorizations } from "../spending/authorizations.js";
+import type { ChargeOffs } from "./charge-offs.js";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 const SYSTEM: Actor = { type: "system" };
@@ -27,6 +28,7 @@ export class Closure {
     private readonly accounts: Accounts,
     private readonly authorizations: Authorizations,
     private readonly payouts: Payouts,
+    private readonly chargeOffs: ChargeOffs,
     private readonly config: { closingCaptureWindowDays: number },
   ) {}
 
@@ -112,8 +114,11 @@ export class Closure {
   private async settle(tx: Tx, start: Account, created: Payout[]): Promise<Account> {
     let account = await this.payouts.netAgainstDebt(tx, start, SYSTEM);
     const own = await this.ledger.customerAccounts(tx, account.id);
-    const available =
-      account.credit_limit - (await this.payouts.reservedCollateral(tx, account.id));
+    // A1: a failed collateral payout did not leave; if money is owed, take it back.
+    if (account.posted_debt > 0 || account.charged_off_outstanding > 0) {
+      await this.payouts.releaseFailedCollateral(tx, account);
+    }
+    let available = account.credit_limit - (await this.payouts.reservedCollateral(tx, account.id));
 
     const applied = Math.min(available, account.posted_debt);
     if (applied > 0) {
@@ -142,6 +147,42 @@ export class Closure {
         },
         { actor: SYSTEM, action: "collateral.applied" },
       );
+      available -= applied;
+    }
+
+    // A1: collateral that came back (an unknown payout that turned out failed)
+    // recovers debt that was charged off while it was away.
+    const recovered = Math.min(available, account.charged_off_outstanding);
+    if (recovered > 0) {
+      const { journalId } = await this.ledger.post(tx, {
+        kind: "recovery",
+        accountId: account.id,
+        lines: [
+          { ledgerAccountId: own.customer_collateral, amount: recovered },
+          {
+            ledgerAccountId: await this.ledger.systemAccountId(tx, "cash_operating"),
+            amount: recovered,
+          },
+          {
+            ledgerAccountId: await this.ledger.systemAccountId(tx, "chargeoff_loss"),
+            amount: -recovered,
+          },
+          {
+            ledgerAccountId: await this.ledger.systemAccountId(tx, "cash_collateral"),
+            amount: -recovered,
+          },
+        ],
+      });
+      await this.chargeOffs.record(tx, account.id, "recovery", recovered, journalId);
+      account = await this.accounts.update(
+        tx,
+        account,
+        {
+          credit_limit: account.credit_limit - recovered,
+          charged_off_outstanding: account.charged_off_outstanding - recovered,
+        },
+        { actor: SYSTEM, action: "charge_off.recovered_from_collateral" },
+      );
     }
 
     if (account.posted_debt > 0) {
@@ -155,11 +196,7 @@ export class Closure {
           shortfall,
         ),
       });
-      await tx.query(
-        `INSERT INTO charge_offs (account_id, kind, amount, journal_id, created_at)
-         VALUES ($1, 'charge_off', $2, $3, $4)`,
-        [account.id, shortfall, journalId, this.clock.now()],
-      );
+      await this.chargeOffs.record(tx, account.id, "charge_off", shortfall, journalId);
       account = await this.accounts.update(
         tx,
         account,

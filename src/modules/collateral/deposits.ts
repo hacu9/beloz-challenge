@@ -5,6 +5,7 @@ import { conflict } from "../../platform/errors.js";
 import { addCentavos, type Centavos } from "../../platform/money.js";
 import type { Account, Accounts } from "../accounts/accounts.js";
 import type { Actor, AuditLog } from "../audit/audit.js";
+import { splitIncoming, type ChargeOffs } from "../closure/charge-offs.js";
 import { transfer, type JournalLineInput, type Ledger } from "../ledger/ledger.js";
 
 // A SPEI-style transfer that already landed in one of Acme's bank accounts.
@@ -43,6 +44,7 @@ export class Deposits {
     private readonly audit: AuditLog,
     private readonly accounts: Accounts,
     private readonly minDepositCentavos: Centavos,
+    private readonly chargeOffs: ChargeOffs,
   ) {}
 
   // COL-03..09. Lock order: the bank transaction ID (advisory lock), then the
@@ -160,28 +162,38 @@ export class Deposits {
       return { outcome: "collateral_confirmed", journalId };
     }
 
-    // COL-07, COL-09: the money is the customer's. Credit it; the payout
-    // module (M6) pays the credit balance back. The cash landed in the
-    // segregated collateral bank account, so the ledger says so.
+    // COL-07, COL-09: the money is the customer's. The cash landed in the
+    // segregated collateral bank account, so the ledger says so. B3: it first
+    // recovers charged-off debt; open debt it never pays (D-M6-1). The rest is
+    // returned as a return of this transfer.
+    const split = splitIncoming(amount, account, { payOpenDebt: false });
+    const lines: JournalLineInput[] = [
+      { ledgerAccountId: await this.ledger.systemAccountId(tx, "cash_collateral"), amount },
+    ];
+    if (split.toRecovery > 0) {
+      lines.push({
+        ledgerAccountId: await this.ledger.systemAccountId(tx, "chargeoff_loss"),
+        amount: -split.toRecovery,
+      });
+    }
+    if (split.toCredit > 0) {
+      lines.push({ ledgerAccountId: own.customer_credit, amount: -split.toCredit });
+    }
     const { journalId } = await this.ledger.post(tx, {
       kind: "deposit",
       accountId: account.id,
-      lines: transfer(
-        await this.ledger.systemAccountId(tx, "cash_collateral"),
-        own.customer_credit,
-        amount,
-      ),
+      lines,
     });
+    await this.chargeOffs.record(tx, account.id, "recovery", split.toRecovery, journalId);
     const outcome =
       account.status === "pending_collateral" ? "credited_below_minimum" : "credited_for_payback";
     await this.accounts.update(
       tx,
       account,
       {
-        credit_balance: addCentavos(account.credit_balance, amount),
-        // D-M6-1: this cash is in the collateral account; it goes back as a
-        // return of this transfer and never nets against debt.
-        credit_returnable: addCentavos(account.credit_returnable, amount),
+        charged_off_outstanding: account.charged_off_outstanding - split.toRecovery,
+        credit_balance: addCentavos(account.credit_balance, split.toCredit),
+        credit_returnable: addCentavos(account.credit_returnable, split.toCredit),
       },
       { actor: BANK, action: `account.${outcome}` },
     );
@@ -197,11 +209,11 @@ export class Deposits {
     amount: Centavos,
   ): Promise<{ outcome: DepositOutcome; journalId: string }> {
     const own = await this.ledger.customerAccounts(tx, account.id);
-    // Order: open debt, then charged-off debt (CLOSE-09: a recovery reduces
-    // the loss; it must not come back to the customer as credit), then credit.
-    const toDebt = Math.min(amount, account.posted_debt);
-    const toRecovery = Math.min(amount - toDebt, account.charged_off_outstanding);
-    const toCredit = amount - toDebt - toRecovery;
+    // CLOSE-09: open debt, then charged-off debt (a recovery reduces the
+    // loss; it must not come back to the customer as credit), then credit.
+    const { toDebt, toRecovery, toCredit } = splitIncoming(amount, account, {
+      payOpenDebt: true,
+    });
     const lines: JournalLineInput[] = [
       { ledgerAccountId: await this.ledger.systemAccountId(tx, "cash_operating"), amount },
     ];
@@ -218,13 +230,7 @@ export class Deposits {
       accountId: account.id,
       lines,
     });
-    if (toRecovery > 0) {
-      await tx.query(
-        `INSERT INTO charge_offs (account_id, kind, amount, journal_id, created_at)
-         VALUES ($1, 'recovery', $2, $3, $4)`,
-        [account.id, toRecovery, journalId, this.clock.now()],
-      );
-    }
+    await this.chargeOffs.record(tx, account.id, "recovery", toRecovery, journalId);
     await this.accounts.update(
       tx,
       account,

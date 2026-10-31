@@ -86,7 +86,10 @@ Format: each requirement has an ID, one rule, and the source decision (`Q` =
 | PAYOUT-11 | A deposit credited to the customer (COL-07, COL-09) shall go back as a `return` payout from `cash_collateral` and shall never net against debt. | D-M6-1 |
 | PAYOUT-12 | Payouts shall go to the payout CLABE the customer gave when opening the account. Opening an account without an 18-digit payout CLABE shall return 422. | D-M6-3 |
 | PAYOUT-13 | A scheduled job shall create the due payouts and send each one after its commit, with no lock held during the bank call. | REPAY-04 |
-| PAYOUT-14 | The ops payout list shall flag a `requested` payout as stuck when, `PAYOUT_STUCK_MINUTES` after creation, it was never submitted (`not_submitted`), or, that long after submission, the bank sent no result (`no_bank_result`). | Henry 2026-10-31 |
+| PAYOUT-15 | A cancelled payout shall keep its money held (it does not net, is not paid out again, and keeps the account from closing) until ops releases it. Release may set a new payout CLABE; released credit first pays debt. A payout can be released once. | OQ-13 |
+| PAYOUT-16 | When an account owes open or charged-off debt, settlement shall take back the collateral of a `failed` collateral payout and use it for that debt. A `requested` or `unknown` collateral payout is not touched; if it later turns `failed`, its collateral recovers the charge-off. | review A1 |
+| PAYOUT-17 | A payout shall be claimed atomically before the bank call, so concurrent senders make at most one bank request per payout. | review B1 |
+| PAYOUT-14 | The ops payout list shall flag a `requested` payout as stuck when, `PAYOUT_STUCK_MINUTES` after creation, it was never claimed for sending (`not_submitted`), or, that long after the claim, the bank sent no result (`no_bank_result`, which includes a crash between the claim and the bank call). | Henry 2026-10-31 |
 | PAYOUT-09 | When a bank result webhook arrives for a payout that a person already resolved, the service shall not change the payout. If the results differ, it shall flag a mismatch for ops and write an audit row. | OQ-12 |
 
 ## 6. Closure and collateral release (CLOSE)
@@ -99,7 +102,7 @@ Format: each requirement has an ID, one rule, and the source decision (`Q` =
 | CLOSE-04 | In `settling`, the service shall apply the collateral to the debt first, then pay out the remaining collateral and the credit balance to the customer. | Q19 |
 | CLOSE-05 | The service shall move the account to `closed` when the bank confirms all payouts. | Q19, OQ-06 |
 | CLOSE-07 | When the debt is larger than the collateral, the service shall apply all collateral and post the rest to `chargeoff_loss`. | OQ-04 |
-| CLOSE-09 | A repayment shall pay open debt first, then charged-off debt (a recovery that reduces `chargeoff_loss`), and only then become credit. | D-M7-1 |
+| CLOSE-09 | A repayment or a refund shall pay open debt first, then charged-off debt (a recovery that reduces `chargeoff_loss`), and only then become credit. A deposit to the collateral reference shall recover charged-off debt first; it never pays open debt (D-M6-1). | D-M7-1, review B2/B3 |
 | CLOSE-08 | A capture, refund or repayment in `settling` or `closed` shall post. A credit that results shall trigger a new payout. | OQ-05 |
 | CLOSE-06 | The service shall never release collateral while the account has debt. | Q19, Q24 |
 

@@ -23,6 +23,8 @@ export interface Payout {
   destination_clabe: string;
   return_of: string | null;
   submitted_at: Date | null;
+  /** OQ-13: set when ops releases a cancelled (parked) payout. */
+  released_at: Date | null;
   journal_id: string | null;
   bank_txn_id: string | null;
   resolved_by: string | null;
@@ -32,8 +34,11 @@ export interface Payout {
   updated_at: Date;
 }
 
-/** Statuses whose money is still reserved (PAYOUT-05). */
-const OPEN: readonly PayoutStatus[] = ["requested", "unknown", "failed"];
+// PAYOUT-05, OQ-13: a payout holds its money while it is requested, unknown
+// or failed, and while it is cancelled but not released ("parked"). Held
+// money never nets, is never paid out again, and keeps the account open.
+const HELD = `(status IN ('requested', 'unknown', 'failed')
+               OR (status = 'cancelled' AND released_at IS NULL))`;
 
 export const PayoutResultEvent = z.object({
   type: z.enum(["payout.completed", "payout.failed"]),
@@ -47,6 +52,16 @@ export const ResolveRequest = z.object({
   note: z.string().min(1).max(1000),
 });
 export type ResolveRequest = z.infer<typeof ResolveRequest>;
+
+export const ReleaseRequest = z.object({
+  note: z.string().min(1).max(1000),
+  /** Optional new payout CLABE; a bad CLABE is the usual reason for a cancel. */
+  payoutClabe: z
+    .string()
+    .regex(/^\d{18}$/)
+    .optional(),
+});
+export type ReleaseRequest = z.infer<typeof ReleaseRequest>;
 
 export type PayoutResultOutcome =
   "payout_result_applied" | "payout_result_ignored" | "payout_result_mismatch";
@@ -68,6 +83,8 @@ export function toPayoutView(p: Payout & { stuck_reason?: StuckReason | null }) 
     destinationClabeLast4: p.destination_clabe.slice(-4),
     returnOf: p.return_of,
     submittedAt: p.submitted_at?.toISOString() ?? null,
+    parked: p.status === "cancelled" && p.released_at === null,
+    releasedAt: p.released_at?.toISOString() ?? null,
     resolvedBy: p.resolved_by,
     resolutionNote: p.resolution_note,
     mismatch: p.mismatch,
@@ -87,22 +104,22 @@ export class Payouts {
     private readonly bank: BankClient,
   ) {}
 
-  /** Operating-sourced credit already reserved by an open credit payout. */
+  /** Operating-sourced credit held by a credit payout. */
   private async reservedCredit(tx: Tx, accountId: string): Promise<Centavos> {
     const { rows } = await tx.query<{ reserved: number }>(
       `SELECT coalesce(sum(amount), 0) AS reserved FROM payouts
-       WHERE account_id = $1 AND kind = 'credit' AND status = ANY($2)`,
-      [accountId, OPEN],
+       WHERE account_id = $1 AND kind = 'credit' AND ${HELD}`,
+      [accountId],
     );
     return rows[0]!.reserved;
   }
 
-  /** Collateral already in an open collateral payout (CLOSE-04). */
+  /** Collateral held by a collateral payout (CLOSE-04). */
   async reservedCollateral(tx: Tx, accountId: string): Promise<Centavos> {
     const { rows } = await tx.query<{ reserved: number }>(
       `SELECT coalesce(sum(amount), 0) AS reserved FROM payouts
-       WHERE account_id = $1 AND kind = 'collateral' AND status = ANY($2)`,
-      [accountId, OPEN],
+       WHERE account_id = $1 AND kind = 'collateral' AND ${HELD}`,
+      [accountId],
     );
     return rows[0]!.reserved;
   }
@@ -113,13 +130,38 @@ export class Payouts {
     return this.insert(tx, account, "collateral", amount, "cash_collateral", null);
   }
 
-  /** Any payout of this account whose money is not settled yet (PAYOUT-07). */
+  /** Any payout of this account that still holds money (PAYOUT-07, OQ-13). */
   async hasOpenPayouts(tx: Tx, accountId: string): Promise<boolean> {
     const { rowCount } = await tx.query(
-      "SELECT 1 FROM payouts WHERE account_id = $1 AND status = ANY($2) LIMIT 1",
-      [accountId, OPEN],
+      `SELECT 1 FROM payouts WHERE account_id = $1 AND ${HELD} LIMIT 1`,
+      [accountId],
     );
     return (rowCount ?? 0) > 0;
+  }
+
+  // A1: when the account owes money (open or charged-off), a collateral
+  // payout that certainly did not leave (failed) is cancelled and released at
+  // once, so settlement can use that collateral. A requested or unknown one
+  // may have left and is not touched. Call under the account lock.
+  async releaseFailedCollateral(tx: Tx, account: Account): Promise<number> {
+    const { rows } = await tx.query<Payout>(
+      `UPDATE payouts SET status = 'cancelled', released_at = $2, updated_at = $2,
+         resolution_note = 'collateral needed for debt (A1)'
+       WHERE account_id = $1 AND kind = 'collateral' AND status = 'failed'
+       RETURNING *`,
+      [account.id, this.clock.now()],
+    );
+    for (const p of rows) {
+      await this.audit.write(tx, {
+        actor: SYSTEM,
+        action: "payout.cancelled_for_debt",
+        entityType: "payout",
+        entityId: p.id,
+        before: { status: "failed" },
+        after: { status: "cancelled", released: true, amount: p.amount },
+      });
+    }
+    return rows.length;
   }
 
   /** Credit that is neither returnable nor in a payout: the only credit that may net. */
@@ -157,19 +199,28 @@ export class Payouts {
   // their money. Returns of credited deposits leave from cash_collateral; free
   // credit leaves from cash_operating. Sending happens after commit (submit).
   async createDue(tx: Tx, accountId: string): Promise<Payout[]> {
-    const account = await this.accounts.lock(tx, accountId);
-    if (!account?.payout_clabe) return [];
+    const locked = await this.accounts.lock(tx, accountId);
+    if (!locked?.payout_clabe) return [];
+    // A2: free credit pays existing debt before any of it is paid out.
+    const account = await this.netAgainstDebt(tx, locked, SYSTEM);
     const created: Payout[] = [];
 
+    // A return gives back what of the deposit was not used to recover
+    // charged-off debt (B3). A released return no longer blocks a new one.
     const { rows: deposits } = await tx.query<{ bank_txn_id: string; amount: number }>(
-      `SELECT bt.bank_txn_id, bt.amount FROM bank_transactions bt
+      `SELECT bt.bank_txn_id,
+              bt.amount - coalesce((SELECT sum(c.amount) FROM charge_offs c
+                                    WHERE c.journal_id = bt.journal_id AND c.kind = 'recovery'), 0)
+                AS amount
+       FROM bank_transactions bt
        WHERE bt.account_id = $1
          AND bt.outcome IN ('credited_below_minimum', 'credited_for_payback')
-         AND NOT EXISTS (SELECT 1 FROM payouts p WHERE p.return_of = bt.bank_txn_id)
+         AND NOT EXISTS (SELECT 1 FROM payouts p
+                         WHERE p.return_of = bt.bank_txn_id AND p.released_at IS NULL)
        ORDER BY bt.received_at`,
       [accountId],
     );
-    for (const d of deposits) {
+    for (const d of deposits.filter((d) => d.amount > 0)) {
       created.push(
         await this.insert(tx, account, "return", d.amount, "cash_collateral", d.bank_txn_id),
       );
@@ -212,10 +263,23 @@ export class Payouts {
   // answer is "unknown". PAYOUT-03: never called again on its own for the
   // same payout; only a person's "retry" puts it back to requested.
   async submit(pool: pg.Pool, payoutId: string): Promise<PayoutStatus> {
-    const { rows } = await pool.query<Payout>("SELECT * FROM payouts WHERE id = $1", [payoutId]);
-    const payout = rows[0];
-    if (!payout) throw notFound("payout not found");
-    if (payout.status !== "requested" || payout.submitted_at) return payout.status;
+    // B1: claim the payout before the bank call. Of two concurrent callers,
+    // exactly one gets the row back; the other sends nothing. A crash after
+    // the claim leaves it submitted with no result: the ops list flags it
+    // (no_bank_result) and a person checks with the bank.
+    const claim = await withTx(pool, async (tx) => {
+      const { rows } = await tx.query<Payout>("SELECT * FROM payouts WHERE id = $1", [payoutId]);
+      if (!rows[0]) throw notFound("payout not found");
+      await this.accounts.lock(tx, rows[0].account_id);
+      const claimed = await tx.query<Payout>(
+        `UPDATE payouts SET submitted_at = $2, updated_at = $2
+         WHERE id = $1 AND status = 'requested' AND submitted_at IS NULL RETURNING *`,
+        [payoutId, this.clock.now()],
+      );
+      return { payout: claimed.rows[0], status: rows[0].status };
+    });
+    if (!claim.payout) return claim.status;
+    const payout = claim.payout;
 
     let answer: "accepted" | "rejected" | "unknown";
     try {
@@ -238,10 +302,11 @@ export class Payouts {
       if (current.status !== "requested") return current.status;
       const status: PayoutStatus =
         answer === "accepted" ? "requested" : answer === "rejected" ? "failed" : "unknown";
-      await tx.query(
-        `UPDATE payouts SET status = $2, submitted_at = $3, updated_at = $3 WHERE id = $1`,
-        [payout.id, status, this.clock.now()],
-      );
+      await tx.query(`UPDATE payouts SET status = $2, updated_at = $3 WHERE id = $1`, [
+        payout.id,
+        status,
+        this.clock.now(),
+      ]);
       await this.audit.write(tx, {
         actor: BANK,
         action: `payout.submission_${answer}`,
@@ -364,8 +429,8 @@ export class Payouts {
     } else if (req.action === "failed") {
       await this.setStatus(tx, payout, "failed", ops, resolution);
     } else if (req.action === "cancel") {
-      // The reservation ends: credit becomes free credit again; a return stays
-      // returnable and needs a person (it is not re-created automatically).
+      // OQ-13: cancel parks the money. It stays held (no netting, no new
+      // payout, no closure) until ops releases it.
       await this.setStatus(tx, payout, "cancelled", ops, resolution);
     } else {
       // Retry: back to requested, not yet submitted. Same payout ID, so the
@@ -385,6 +450,48 @@ export class Payouts {
       });
     }
     return { payout: await this.lockPayout(tx, payout.id), needsSubmit: req.action === "retry" };
+  }
+
+  // OQ-13: ends the parking of a cancelled payout. Released credit first pays
+  // debt (A2), and the jobs then pay out what is left; a released return or
+  // collateral payout is created again by the next job run.
+  async release(tx: Tx, payoutId: string, req: ReleaseRequest, ops: Actor): Promise<Payout> {
+    const { rows } = await tx.query<{ account_id: string }>(
+      "SELECT account_id FROM payouts WHERE id = $1",
+      [payoutId],
+    );
+    if (!rows[0]) throw notFound("payout not found");
+    let account = (await this.accounts.lock(tx, rows[0].account_id))!;
+    const payout = await this.lockPayout(tx, payoutId);
+    if (payout.status !== "cancelled" || payout.released_at) {
+      throw conflict(
+        "payout_state",
+        "only a parked (cancelled, not released) payout can be released",
+      );
+    }
+    if (req.payoutClabe && req.payoutClabe !== account.payout_clabe) {
+      account = await this.accounts.update(
+        tx,
+        account,
+        { payout_clabe: req.payoutClabe },
+        { actor: ops, action: "account.payout_clabe_changed" },
+      );
+    }
+    await tx.query(
+      `UPDATE payouts SET released_at = $2, resolved_by = $3, resolution_note = $4, updated_at = $2
+       WHERE id = $1`,
+      [payout.id, this.clock.now(), ops.id ?? null, req.note],
+    );
+    await this.audit.write(tx, {
+      actor: ops,
+      action: "payout.released",
+      entityType: "payout",
+      entityId: payout.id,
+      before: { status: "cancelled", parked: true },
+      after: { status: "cancelled", parked: false, note: req.note, newClabe: !!req.payoutClabe },
+    });
+    if (payout.kind === "credit") await this.netAgainstDebt(tx, account, ops);
+    return this.lockPayout(tx, payout.id);
   }
 
   // PAYOUT-05: the ledger moves only when the money really left.

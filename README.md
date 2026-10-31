@@ -59,7 +59,7 @@ are in [`docs/tasks.md`](docs/tasks.md).
 | Books that balance | double-entry ledger, append-only, zero-sum checked by a deferred DB trigger | LEDGER-01..04 |
 | Money amounts | integer centavos, `bigint` in Postgres, a parser that throws past 2^53 | MONEY-01..05 |
 | Least privilege | the app's DB role cannot UPDATE or DELETE ledger or audit rows | LEDGER-04, AUDIT-03 |
-| Payouts in doubt | a timeout is `unknown`, never retried by the code; a person resolves it | PAYOUT-01..14 |
+| Payouts in doubt | a timeout is `unknown`, never retried by the code; a person resolves it; a cancelled payout stays parked until a person releases it | PAYOUT-01..17 |
 | Drift | `reconcile` recomputes every cached balance from the ledger | OPS-03 |
 | Audit | append-only audit row in the same transaction as every change | AUDIT-01..03 |
 
@@ -68,7 +68,7 @@ are in [`docs/tasks.md`](docs/tasks.md).
 | Caller | Auth | Endpoints |
 |---|---|---|
 | Customer | JWT (`role=customer`) | `POST /v1/accounts`, `GET /v1/accounts[/:id]`, `POST /v1/accounts/:id/close` |
-| Ops | JWT (`role=ops`) | `GET /v1/accounts/:id`, `/v1/ops/payouts`, `/v1/ops/payouts/:id/resolve`, `/v1/ops/unapplied-funds` |
+| Ops | JWT (`role=ops`) | `GET /v1/accounts/:id`, `/v1/ops/payouts`, `/v1/ops/payouts/:id/resolve`, `/v1/ops/payouts/:id/release`, `/v1/ops/unapplied-funds` |
 | Card network | `X-Network-Key` | `/v1/network/authorizations`, `…/:id/reversal`, `/v1/network/captures`, `/v1/network/refunds` |
 | Bank | HMAC signature over the raw body | `/v1/bank/webhooks` (`transfer.received`, `payout.completed`, `payout.failed`) |
 

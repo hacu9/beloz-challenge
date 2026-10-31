@@ -6,6 +6,7 @@ import { addCentavos, type Centavos } from "../../platform/money.js";
 import type { Account, Accounts } from "../accounts/accounts.js";
 import type { Actor, AuditLog } from "../audit/audit.js";
 import { transfer, type JournalLineInput, type Ledger } from "../ledger/ledger.js";
+import { splitIncoming, type ChargeOffs } from "../closure/charge-offs.js";
 import type { Payouts } from "../payouts/payouts.js";
 import type { Authorizations } from "./authorizations.js";
 
@@ -73,6 +74,7 @@ export class Clearing {
     private readonly accounts: Accounts,
     private readonly authorizations: Authorizations,
     private readonly payouts: Payouts,
+    private readonly chargeOffs: ChargeOffs,
   ) {}
 
   // SPEND-06, SPEND-07, SPEND-11. Lock order: capture ID, then account row.
@@ -260,23 +262,34 @@ export class Clearing {
     }
 
     const account = await this.lockAccountForCard(tx, req.cardToken);
-    const debtReduced = Math.min(req.amount, account.posted_debt);
-    const credited = req.amount - debtReduced;
+    // B2, CLOSE-09: open debt, then charged-off debt, then credit.
+    const {
+      toDebt: debtReduced,
+      toRecovery: recovered,
+      toCredit: credited,
+    } = splitIncoming(req.amount, account, { payOpenDebt: true });
     const own = await this.ledger.customerAccounts(tx, account.id);
     const networkPayable = await this.ledger.systemAccountId(tx, "network_payable");
     const lines: JournalLineInput[] = [{ ledgerAccountId: networkPayable, amount: req.amount }];
     if (debtReduced > 0)
       lines.push({ ledgerAccountId: own.customer_receivable, amount: -debtReduced });
+    if (recovered > 0) {
+      lines.push({
+        ledgerAccountId: await this.ledger.systemAccountId(tx, "chargeoff_loss"),
+        amount: -recovered,
+      });
+    }
     if (credited > 0) lines.push({ ledgerAccountId: own.customer_credit, amount: -credited });
     const { journalId } = await this.ledger.post(tx, {
       kind: "refund",
       accountId: account.id,
       lines,
     });
+    await this.chargeOffs.record(tx, account.id, "recovery", recovered, journalId);
 
     const { rows } = await tx.query<{ id: string }>(
-      `INSERT INTO refunds (network_refund_id, network_capture_id, account_id, card_token, amount, debt_reduced, credited, journal_id, created_at)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING id`,
+      `INSERT INTO refunds (network_refund_id, network_capture_id, account_id, card_token, amount, debt_reduced, recovered, credited, journal_id, created_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) RETURNING id`,
       [
         req.networkRefundId,
         req.networkCaptureId ?? null,
@@ -284,6 +297,7 @@ export class Clearing {
         req.cardToken,
         req.amount,
         debtReduced,
+        recovered,
         credited,
         journalId,
         this.clock.now(),
@@ -294,6 +308,7 @@ export class Clearing {
       account,
       {
         posted_debt: account.posted_debt - debtReduced,
+        charged_off_outstanding: account.charged_off_outstanding - recovered,
         credit_balance: addCentavos(account.credit_balance, credited),
       },
       { actor: NETWORK, action: "refund.posted" },
@@ -304,7 +319,7 @@ export class Clearing {
       entityType: "refund",
       entityId: rows[0]!.id,
       before: null,
-      after: { amount: req.amount, debtReduced, credited, journalId },
+      after: { amount: req.amount, debtReduced, recovered, credited, journalId },
     });
     return {
       networkRefundId: req.networkRefundId,

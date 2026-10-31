@@ -104,7 +104,7 @@ accepted them on 2026-10-31.
 | ID | Decision | Reason |
 |---|---|---|
 | D-M6-0 | Free credit nets against new debt at capture time, until a payout takes it (PAYOUT-10). | Henry 2026-10-31. |
-| D-M6-1 | Credit from a deposit that landed in the collateral account never nets; it is returned from `cash_collateral` (PAYOUT-11). Henry confirmed 2026-10-31. | Netting it would move cash out of the segregated account without a real bank transfer: the ledger and the bank statement would disagree. |
+| D-M6-1 | Credit from a deposit that landed in the collateral account never nets against open debt; it is returned from `cash_collateral` (PAYOUT-11). Henry confirmed 2026-10-31. Amended by D-R-5: it first recovers charged-off debt. | Netting it would move cash out of the segregated account without a real bank transfer: the ledger and the bank statement would disagree. |
 | D-M6-2 | Payouts are created by a scheduled job, not at the moment credit appears. | Without a delay there is no "not sent yet" window, so D-M6-0 would never apply. |
 | D-M6-3 | The customer gives a payout CLABE when opening the account. Henry confirmed 2026-10-31. | A payout needs a destination; the service had none. |
 | D-M6-4 | Fifth payout state `cancelled`: ops gives up on a failed payout; the reservation ends. Henry confirmed 2026-10-31. | OQ-06 says a person resolves a failed payout; "retry" and "give up" are the two resolutions. |
@@ -117,7 +117,7 @@ accepted them on 2026-10-31.
 | D-M7-1 | A repayment after a charge-off is a recovery: it reduces `chargeoff_loss` before it can become credit (CLOSE-09). | Without it, a customer paying a charged-off debt would have the money paid back to them, because `posted_debt` is already 0. Found while designing M7. |
 | D-M7-2 | Charged-off debt stays on the account as `charged_off_outstanding`, with an append-only `charge_offs` log (charge-off / recovery). | OQ-04 says "record the debt for collections". |
 | D-M7-3 | A `pending_collateral` account with money (a credited deposit) closes through `closing` → `settling`, without the late-capture window. | Its deposit must go back first; it never had an active card, so no capture can arrive. |
-| D-M7-4 | Collateral already in a payout is never pulled back. Debt that appears after that is charged off. | The money has left or may have left (`unknown`). Pulling it back needs the bank. |
+| D-M7-4 | Collateral already in a payout is never pulled back. Debt that appears after that is charged off. Amended by D-R-4: a `failed` collateral payout is taken back; an `unknown` one that later fails recovers the charge-off. | The money has left or may have left (`unknown`). Pulling it back needs the bank. |
 | D-M7-5 | Stuck payouts are flagged in two kinds: `not_submitted` and `no_bank_result` (PAYOUT-14). | Henry asked for a stuck flag; SPEI settles in seconds, so both are suspect after minutes. |
 
 ## M8 / M9 build decisions (2026-10-31)
@@ -131,6 +131,27 @@ accepted them on 2026-10-31.
 | D-M9-1 | Terraform generates every secret, so they are in the state; the S3 backend must be encrypted and locked. | Simplest correct first environment. RDS-managed master passwords plus rotation is the next step. |
 | D-M9-2 | ARM64 (Graviton) Fargate tasks, one NAT gateway, HTTPS-only ALB. | Cost for a first environment; production adds a NAT per AZ. |
 | D-M9-3 | Jobs are scheduled one-off tasks with no scheduler retry. | Each job step is idempotent under the account lock; the next tick is the retry. A failure raises an alarm. |
+
+## Blind review fixes (2026-10-31)
+
+opencode2 (`gpt-6-luna`), two blind runs: closure + payouts, and refunds + repayments + clearing. Briefs held the files, 11 money rules and the five review questions only.
+
+| ID | Finding | Verdict | Decision |
+|---|---|---|---|
+| D-R-1 | A2: credit freed after debt appeared was paid out instead of netting (repro: 10,000 paid, 4,000 expected) | CONFIRMED | Release nets first; `createDue` nets first as a second barrier. |
+| D-R-2 | B2: a refund after a charge-off became customer credit (repro) | CONFIRMED | Refunds split debt → charged-off → credit, like repayments (CLOSE-09). |
+| D-R-3 | B1: concurrent `submit` could call the bank twice for one payout | CONFIRMED (robustness: no caller does it today; the bank dedupes on payout ID) | Atomic claim before the bank call (PAYOUT-17). |
+| D-R-4 | A1: collateral leaves while late debt is charged off | ESCALATED → Henry 2026-10-31 | Take back a `failed` collateral payout when money is owed; keep the charge-off for `requested`/`unknown`, and recover it from the collateral if that payout later fails (PAYOUT-16). |
+| D-R-5 | B3: a collateral-reference deposit is returned while the customer owes charged-off debt | ESCALATED → Henry 2026-10-31 | Recover charged-off debt first; open debt still never nets (CLOSE-09). |
+| D-R-6 | B4: `accounts.update` can set `closed` with debt | REJECTED | Only closure and the empty-pending close set `closed`, both after checking balances; a DB rule is impossible because closed accounts take late debt (CLOSE-08). |
+| D-R-7 | B5: a cancelled return strands credit and blocks closure | CONFIRMED, merged into OQ-13 | Answered by OQ-13 below. |
+| D-R-8 | B6, B7 | REJECTED | Informational / caller outside the file set (`closure.ts`). |
+
+## OQ-13 answer (2026-10-31)
+
+| OQ | Decision |
+|---|---|
+| OQ-13 | `cancel` parks the money until ops acts. Ops releases a parked payout (optionally with a new payout CLABE); without a release the account never closes (PAYOUT-15). |
 
 ## Dependency audit (2026-10-31)
 

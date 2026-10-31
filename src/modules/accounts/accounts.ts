@@ -74,6 +74,7 @@ const UPDATABLE = [
   "credit_balance",
   "credit_returnable",
   "charged_off_outstanding",
+  "payout_clabe",
   "activated_at",
   "closing_started_at",
 ] as const;

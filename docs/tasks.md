@@ -175,6 +175,26 @@ OPS-05 (the demo) and OPS-06 (CI) are proved by running them, not by unit tests.
 - [x] Terraform for AWS: VPC, ALB, ECS Fargate (app, migrate, jobs), RDS, Secrets Manager, EventBridge Scheduler, job-failure alarm. (Q29, [deployment.md](deployment.md))
 - [x] CI runs `terraform fmt -check`, `init -backend=false` and `validate`. (OPS-06)
 
+## Blind review fixes (done 2026-10-31)
+
+- [x] A2, B2, B1 fixed; A1, B3 and OQ-13 implemented as Henry decided (decisions.md, "Blind review fixes").
+- [x] The review repros kept as regression tests (`test/http/review-fixes.test.ts`).
+
+**Mutation checks (review fixes).**
+
+| Mutation | Test that goes red |
+|---|---|
+| Release does not net (A2) | A2 |
+| `createDue` does not net (A2) | **stays green**: release already nets; second barrier |
+| Neither nets (A2) | A2 |
+| Refund skips recovery (B2) | B2 |
+| No claim before the bank call (B1) | B1 (3 concurrent submits) |
+| Failed collateral not taken back (A1) | both A1 tests |
+| No recovery from returned collateral (A1) | A1 unknown → failed |
+| Deposit skips recovery (B3) | B3 |
+| Cancelled money not held (OQ-13) | parked collateral, PAYOUT-15 credit. First run stayed green: the return case is also held by the live-return index and the credit balance, so a collateral test was added |
+| Release allowed twice (OQ-13) | OQ-13 return |
+
 ## M10 — Delivery
 
 - [ ] Export the Claude Code transcripts into `PROMPTS.md`, in order. (Q4)
@@ -183,7 +203,6 @@ OPS-05 (the demo) and OPS-06 (CI) are proved by running them, not by unit tests.
 
 ## Backlog (after the core, in this order)
 
-0. Decide OQ-13 (what `cancel` does to the money of a failed payout).
 1. Freeze / unfreeze. (FREEZE-01, FREEZE-02)
 2. Collateral top-up / limit increase. (OQ-02)
 3. Statements.

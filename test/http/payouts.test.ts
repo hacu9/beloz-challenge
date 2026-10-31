@@ -276,7 +276,7 @@ describe("PAYOUT-04: ops resolution", () => {
     expect(audit.rows.at(-1)).toEqual({ actor_type: "ops", action: "payout.completed" });
   });
 
-  it("PAYOUT-01: ops retries a failed payout with the same payout ID; ops can cancel to free the credit", async () => {
+  it("PAYOUT-01 / PAYOUT-15: ops retries a failed payout; cancel parks the credit until release", async () => {
     const acc = await withCredit(6_000);
     h.bank.mode = "reject";
     await sendDuePayouts(h.deps, { accountIds: [acc.view.id] });
@@ -288,15 +288,30 @@ describe("PAYOUT-04: ops resolution", () => {
     expect(h.bank.requests.at(-1)!.payoutId).toBe(payout!.id);
     expect((await payoutsOf(acc.view.id))[0]!.status).toBe("requested");
 
-    // The bank fails it again; ops gives up. The credit is free again and nets.
+    // The bank fails it again; ops gives up. The credit is parked: it does
+    // not net and the job does not pay it out again.
     await bankResult(payout!.id, "failed");
-    expect((await resolve(payout!.id, "cancel")).body.payout.status).toBe("cancelled");
+    expect((await resolve(payout!.id, "cancel")).body.payout).toMatchObject({
+      status: "cancelled",
+      parked: true,
+    });
     await network("/captures", {
       networkCaptureId: `cap_${randomUUID()}`,
       cardToken: acc.cardToken,
       amount: 6_000,
       currency: "MXN",
     });
+    expect(await view(acc.view.id)).toMatchObject({ postedDebt: 6_000, creditBalance: 6_000 });
+    await sendDuePayouts(h.deps, { accountIds: [acc.view.id] });
+    expect(await payoutsOf(acc.view.id)).toHaveLength(1);
+
+    // Release: the freed credit pays the debt first (A2).
+    const released = await request(app)
+      .post(`/v1/ops/payouts/${payout!.id}/release`)
+      .set("Authorization", await bearer("ops", h.clock))
+      .set("Idempotency-Key", randomUUID())
+      .send({ note: "customer confirmed a new account" });
+    expect(released.body.payout).toMatchObject({ parked: false });
     expect(await view(acc.view.id)).toMatchObject({ postedDebt: 0, creditBalance: 0 });
     await expectAccountConsistent(h, acc.view.id);
   });

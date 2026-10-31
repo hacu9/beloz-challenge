@@ -2,6 +2,7 @@ import type pg from "pg";
 import { FakeBankApi } from "./fakes/fake-bank.js";
 import { Accounts } from "./modules/accounts/accounts.js";
 import { AuditLog } from "./modules/audit/audit.js";
+import { ChargeOffs } from "./modules/closure/charge-offs.js";
 import { Closure } from "./modules/closure/closure.js";
 import { Deposits } from "./modules/collateral/deposits.js";
 import { Ledger } from "./modules/ledger/ledger.js";
@@ -38,16 +39,26 @@ export function buildDeps(
   const ledger = new Ledger(base.clock);
   const audit = new AuditLog(base.clock);
   const accounts = new Accounts(base.clock, ledger, audit);
+  const chargeOffs = new ChargeOffs(base.clock);
   const deposits = new Deposits(
     base.clock,
     ledger,
     audit,
     accounts,
     base.config.minDepositCentavos,
+    chargeOffs,
   );
   const authorizations = new Authorizations(base.clock, audit, accounts, base.config);
   const payouts = new Payouts(base.clock, ledger, audit, accounts, bank);
-  const clearing = new Clearing(base.clock, ledger, audit, accounts, authorizations, payouts);
+  const clearing = new Clearing(
+    base.clock,
+    ledger,
+    audit,
+    accounts,
+    authorizations,
+    payouts,
+    chargeOffs,
+  );
   const closure = new Closure(
     base.clock,
     ledger,
@@ -55,6 +66,7 @@ export function buildDeps(
     accounts,
     authorizations,
     payouts,
+    chargeOffs,
     base.config,
   );
   return {

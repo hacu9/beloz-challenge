@@ -2,9 +2,13 @@ import express, { type Router } from "express";
 import { z } from "zod";
 import type { Deps } from "../../deps.js";
 import { requireUser } from "../../http/middleware/auth.js";
-import { requireIdempotencyKey, runIdempotent } from "../../http/middleware/idempotency.js";
+import {
+  requireIdempotencyKey,
+  runIdempotent,
+  sendIdempotent,
+} from "../../http/middleware/idempotency.js";
 import { notFound } from "../../platform/errors.js";
-import { ResolveRequest, toPayoutView } from "./payouts.js";
+import { ReleaseRequest, ResolveRequest, toPayoutView } from "./payouts.js";
 
 const Statuses = z
   .string()
@@ -61,6 +65,20 @@ export function opsRoutes(deps: Deps): Router {
     }
     if (result.replayed) res.setHeader("Idempotent-Replayed", "true");
     res.status(result.status).json(result.body);
+  });
+
+  // OQ-13: releases a parked (cancelled) payout, optionally with a new payout
+  // CLABE. The jobs then create a fresh payout; released credit first nets.
+  r.post("/payouts/:id/release", requireIdempotencyKey(), async (req, res) => {
+    const id = z.string().uuid().safeParse(req.params.id);
+    if (!id.success) throw notFound("payout not found");
+    const body = ReleaseRequest.parse(req.body);
+    const ops = req.principal?.type === "ops" ? req.principal : undefined;
+    if (!ops) throw new Error("route needs requireUser(ops)");
+    await sendIdempotent(req, res, deps, async (tx) => {
+      const payout = await payouts.release(tx, id.data, body, ops);
+      return { status: 200, body: { payout: toPayoutView(payout) } };
+    });
   });
 
   r.get("/unapplied-funds", async (_req, res) => {
