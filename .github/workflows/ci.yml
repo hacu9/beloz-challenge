@@ -37,6 +37,8 @@ jobs:
       - run: npm run typecheck
       - run: npm run build
       - run: npm test
+      # Review F3: a broken Dockerfile must fail CI, not the release.
+      - run: docker build --tag acme-credit:ci .
 
   # Q29, OPS-06: the AWS infrastructure must stay valid; it is never applied here.
   terraform:
@@ -52,3 +54,5 @@ jobs:
       - run: terraform fmt -check -recursive
       - run: terraform init -backend=false -input=false
       - run: terraform validate
+      # Variable guards and alarm wiring, with mocked providers (no AWS access).
+      - run: terraform test

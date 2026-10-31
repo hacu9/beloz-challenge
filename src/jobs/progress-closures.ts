@@ -1,10 +1,18 @@
 import type { Deps } from "../deps.js";
 import { withTx } from "../platform/db/tx.js";
+import { withJobContext } from "./context.js";
 
 // CLOSE-03..08. Moves each closing/settling account one step, and settles
 // late money on closed accounts (CLOSE-08). One short transaction per
 // account; payouts are sent after the commit, with no lock held.
-export async function progressClosures(
+export function progressClosures(
+  deps: Deps,
+  opts: { accountIds?: string[] } = {},
+): Promise<{ accounts: number; closed: number }> {
+  return withJobContext("progress-closures", () => progressClosuresRun(deps, opts));
+}
+
+async function progressClosuresRun(
   deps: Deps,
   opts: { accountIds?: string[] } = {},
 ): Promise<{ accounts: number; closed: number }> {

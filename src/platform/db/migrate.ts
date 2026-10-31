@@ -32,6 +32,16 @@ export async function migrate(
     );
     const done = new Map(rows.map((r) => [r.version, r.checksum]));
 
+    // A migration added before one that already ran would run out of order
+    // (review D4): refuse it instead of applying it after its successors.
+    const lastApplied = [...done.keys()].sort().at(-1);
+    const late = files.filter((f) => !done.has(f) && lastApplied !== undefined && f < lastApplied);
+    if (late.length > 0) {
+      throw new Error(
+        `migration ${late.join(", ")} sorts before the applied ${lastApplied}; rename it to run last`,
+      );
+    }
+
     for (const file of files) {
       const sql = await readFile(path.join(dir, file), "utf8");
       const checksum = createHash("sha256").update(sql).digest("hex");

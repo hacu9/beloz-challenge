@@ -120,7 +120,7 @@ Format: each requirement has an ID, one rule, and the source decision (`Q` =
 | SEC-01 | Customer and ops endpoints shall require a JWT with a role (`customer` or `ops`). | Q21 |
 | SEC-02 | A customer shall read and change only their own account. A request for another account shall return HTTP 404. | Q21 |
 | SEC-03 | Card network endpoints shall require the network API key. | Q21 |
-| SEC-04 | Bank webhooks shall require a valid HMAC-SHA256 signature over the timestamp and the raw body. The service shall reject a timestamp older than 5 minutes. | Q21 |
+| SEC-04 | Bank webhooks shall require a valid HMAC-SHA256 signature over the timestamp and the raw JSON body. The service shall reject a timestamp older than 5 minutes, and shall reject a request with no raw JSON body (fail closed). | Q21, review C1 |
 | SEC-05 | The service shall store only a card token and the last 4 digits. It shall never store or log a full card number. | Q22 |
 | SEC-06 | Logs shall not contain secrets, tokens or signatures. | Q22, Q26 |
 
@@ -138,7 +138,7 @@ Format: each requirement has an ID, one rule, and the source decision (`Q` =
 
 | ID | Requirement | Source |
 |---|---|---|
-| AUDIT-01 | Every state change shall write an audit row: actor, action, entity, state before, state after, request ID, time. | Q23 |
+| AUDIT-01 | Every state change shall write an audit row: actor, action, entity, state before, state after, request ID, time. A scheduled job run uses a run ID (`job:<name>:<uuid>`) as its request ID. | Q23, review D3 |
 | AUDIT-02 | The service shall write the audit row in the same transaction as the change. | Q23 |
 | AUDIT-03 | The database shall reject an `UPDATE` or a `DELETE` on the audit table. | Q23 |
 
@@ -151,4 +151,5 @@ Format: each requirement has an ID, one rule, and the source decision (`Q` =
 | OPS-03 | A reconciliation command shall check that (a) the ledger sums to zero, (b) each `held_total` equals the sum of open holds, (c) each cached balance equals its ledger sum, (d) each `charged_off_outstanding` equals its `charge_offs` log. It shall exit non-zero on a mismatch. | Q25 |
 | OPS-04 | `docker compose up` shall start Postgres, run the migrations and the seed, and start the app. | Q28 |
 | OPS-05 | A demo script (`npm run demo`) shall run the main flow end to end against the Compose stack: open, deposit, activate, authorize, capture, repay, close, payout, reconcile. It shall exit non-zero on any unexpected value. | Q28 |
-| OPS-06 | CI shall run lint, Prettier, `npm audit --omit=dev`, type check, build, the tests against Postgres, and `terraform fmt -check` + `validate`. | Q30 |
+| OPS-07 | The migration runner shall refuse a migration that sorts before one already applied, and an applied migration whose file changed. | review D4 |
+| OPS-06 | CI shall run lint, Prettier, `npm audit --omit=dev`, type check, build, the tests against Postgres, a Docker image build, and `terraform fmt -check` + `validate` + `test`. | Q30, review F3 |

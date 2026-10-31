@@ -1,12 +1,20 @@
 import type { Deps } from "../deps.js";
 import { withTx } from "../platform/db/tx.js";
 import type { PayoutStatus } from "../modules/payouts/payouts.js";
+import { withJobContext } from "./context.js";
 
 // REPAY-04, PAYOUT-11. Runs on a schedule. Until it runs, free credit can
 // still net against new debt (PAYOUT-10); once it created a payout, that money
 // is reserved. Each account gets its own short transaction; each payout is
 // sent after its commit, with no lock held during the bank call.
-export async function sendDuePayouts(
+export function sendDuePayouts(
+  deps: Deps,
+  opts: { accountIds?: string[] } = {},
+): Promise<{ created: number; statuses: PayoutStatus[] }> {
+  return withJobContext("send-payouts", () => sendDuePayoutsRun(deps, opts));
+}
+
+async function sendDuePayoutsRun(
   deps: Deps,
   opts: { accountIds?: string[] } = {},
 ): Promise<{ created: number; statuses: PayoutStatus[] }> {

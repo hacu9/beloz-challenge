@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import request from "supertest";
 import { afterAll, describe, expect, it } from "vitest";
 import { signWebhook } from "../../src/fakes/fake-bank.js";
+import { bankSignature } from "../../src/http/middleware/auth.js";
 import { issueToken } from "../../src/fakes/fake-login.js";
 import { createHarness, testConfig } from "../support/harness.js";
 import { mountProbeRoutes } from "../support/probe-routes.js";
@@ -110,6 +111,19 @@ describe("SEC-04: bank webhook signature", () => {
       (await request(app).post("/test/bank").set("content-type", "application/json").send(payload))
         .status,
     ).toBe(401);
+  });
+
+  it("review C1: fails closed when no JSON body was signed (signature over nothing)", async () => {
+    const t = Math.floor(h.clock.now().getTime() / 1000);
+    const overNothing = bankSignature(testConfig.bankWebhookSecret, t, Buffer.alloc(0));
+    for (const type of ["text/plain", "application/x-www-form-urlencoded", "application/json"]) {
+      const res = await request(app)
+        .post("/test/bank")
+        .set("content-type", type)
+        .set("x-bank-signature", `t=${t},v1=${overNothing}`)
+        .send(type === "application/json" ? "" : JSON.stringify(body));
+      expect(res.status, type).toBe(401);
+    }
   });
 
   it("rejects a replay outside the 5 minute window", async () => {

@@ -1,4 +1,5 @@
 import type { Deps } from "../deps.js";
+import { withJobContext } from "./context.js";
 
 export interface Mismatch {
   check: string;
@@ -10,7 +11,14 @@ export interface Mismatch {
 // OPS-03, Q25: recomputes every cached number from its source of truth.
 // Read-only. A non-empty `mismatches` means the books and the cache disagree;
 // the CLI exits non-zero so a scheduler or CI step fails loudly.
-export async function reconcile(
+export function reconcile(
+  deps: Deps,
+  opts: { accountIds?: string[] } = {},
+): Promise<{ ok: boolean; accountsChecked: number; ledgerTotal: number; mismatches: Mismatch[] }> {
+  return withJobContext("reconcile", () => reconcileRun(deps, opts));
+}
+
+async function reconcileRun(
   deps: Deps,
   opts: { accountIds?: string[] } = {},
 ): Promise<{ ok: boolean; accountsChecked: number; ledgerTotal: number; mismatches: Mismatch[] }> {

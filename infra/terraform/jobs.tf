@@ -84,6 +84,19 @@ resource "aws_cloudwatch_log_metric_filter" "job_failed" {
   }
 }
 
+# Review F5: an alarm with no action pages nobody.
+resource "aws_sns_topic" "alerts" {
+  name              = "${local.name}-alerts"
+  kms_master_key_id = "alias/aws/sns"
+}
+
+resource "aws_sns_topic_subscription" "alerts_email" {
+  count     = var.alert_email == "" ? 0 : 1
+  topic_arn = aws_sns_topic.alerts.arn
+  protocol  = "email"
+  endpoint  = var.alert_email
+}
+
 resource "aws_cloudwatch_metric_alarm" "job_failed" {
   alarm_name          = "${local.name}-job-failed"
   namespace           = "AcmeCard/${var.environment}"
@@ -94,5 +107,7 @@ resource "aws_cloudwatch_metric_alarm" "job_failed" {
   threshold           = 0
   comparison_operator = "GreaterThanThreshold"
   treat_missing_data  = "notBreaching"
+  alarm_actions       = [aws_sns_topic.alerts.arn]
+  ok_actions          = [aws_sns_topic.alerts.arn]
   alarm_description   = "A scheduled job (often reconcile) reported a failure. Check the books before anything else."
 }

@@ -195,6 +195,22 @@ OPS-05 (the demo) and OPS-06 (CI) are proved by running them, not by unit tests.
 | Cancelled money not held (OQ-13) | parked collateral, PAYOUT-15 credit. First run stayed green: the return case is also held by the live-return index and the credit balance, so a collateral test was added |
 | Release allowed twice (OQ-13) | OQ-13 return |
 
+## Second blind review fixes (done 2026-10-31)
+
+- [x] C1, D1, D3, D4, F1, F2, F3, F5 fixed (decisions.md, "Second blind review").
+
+**Mutation checks.**
+
+| Mutation | Test that goes red |
+|---|---|
+| No raw-body guard (C1) | review C1 auth test |
+| No migration order check (D4) | review D4 migrate test |
+| Job without a run context (D3) | review D3 job-context test |
+| No `app_config` validation (F1) | `terraform test`: secret_in_app_config_is_refused |
+| No alarm action (F5) | `terraform test`: default_config_plans |
+
+D1 (a comment) and F2 (a digest pin) change no behaviour; F2 is proven by a build from the pinned digest, which CI now runs (F3).
+
 ## M10 — Delivery
 
 - [ ] Export the Claude Code transcripts into `PROMPTS.md`, in order. (Q4)

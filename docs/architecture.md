@@ -59,7 +59,7 @@ Rule: only `ledger/` writes to the ledger tables. Other modules call
 
 ## 3. Data model
 
-Source of truth: `db/migrations/001..007`. Summary (CHECKs abbreviated):
+Source of truth: `db/migrations/001..008`. The runner refuses an edited applied migration and one that sorts before an applied one (OPS-07). Summary (CHECKs abbreviated):
 
 ```sql
 accounts (id uuid pk, customer_id uuid,           -- one non-closed account per customer (partial unique index)
@@ -105,7 +105,7 @@ schema_migrations (version pk, checksum, applied_at)                            
 - A deferred constraint trigger checks that the lines of each journal sum to zero at commit (LEDGER-02).
 - A trigger lets a line join only an entry created in the same transaction, so a committed entry never changes (LEDGER-03).
 - Timestamps have no `DEFAULT now()`. The app writes them from the clock (OPS-01).
-- A trigger rejects `UPDATE` and `DELETE` on `journal_entries`, `journal_lines` and `audit_log` (LEDGER-04, AUDIT-03).
+- A trigger rejects `UPDATE`, `DELETE` and `TRUNCATE` on `journal_entries`, `journal_lines` and `audit_log` (LEDGER-04, AUDIT-03). The table owner can disable a trigger, so the trigger alone does not bind the owner; the app never connects as the owner (migration 008 records this on the function).
 - The app DB role `acme_app` gets `INSERT, SELECT` only on those tables, as a second barrier.
   The migration step creates the role (`ensureAppRole`) and runs as the owner.
 - `pg` parses `int8` and `numeric` per pool with a strict safe-integer parser (§4).
@@ -355,6 +355,7 @@ and a customer transaction history endpoint.
 
 All jobs read the injectable clock and take the account lock like any other writer.
 
+- Each run executes under a run ID (`job:<name>:<uuid>`), which every audit row, journal entry and log line of that run carries (AUDIT-01).
 - Run with `docker compose run --rm jobs <name>` locally (or `npm run job -- <name>` from the host), `node dist/jobs/cli.js <name>` in a container. In AWS, EventBridge Scheduler starts each as a one-off ECS task (`infra/terraform/jobs.tf`).
 - `send-payouts`: creates the due `return` and `credit` payouts per account (one transaction each, under the account lock), then sends each one after commit.
 - `expire-holds`: marks overdue holds `expired` and lowers `held_total`. The authorize path also expires holds lazily, so correctness does not depend on the job. Until the job runs, `GET /v1/accounts/:id` can show an overdue hold in `heldTotal`; the next authorization never sees it.

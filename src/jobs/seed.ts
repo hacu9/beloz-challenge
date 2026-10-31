@@ -1,5 +1,6 @@
 import type { Deps } from "../deps.js";
 import { withTx } from "../platform/db/tx.js";
+import { withJobContext } from "./context.js";
 
 // OPS-04: one demo customer with an active account, so a fresh stack has
 // something to look at. Idempotent: a second run finds the account and stops.
@@ -9,7 +10,11 @@ export const SEED_CUSTOMER_ID = "00000000-0000-4000-8000-000000000001";
 const SEED_PAYOUT_CLABE = "012180001234567897";
 const SEED_COLLATERAL = 1_000_000; // 10,000.00 MXN
 
-export async function seed(deps: Deps): Promise<{ created: boolean; accountId: string }> {
+export function seed(deps: Deps): Promise<{ created: boolean; accountId: string }> {
+  return withJobContext("seed", () => seedRun(deps));
+}
+
+async function seedRun(deps: Deps): Promise<{ created: boolean; accountId: string }> {
   const existing = await deps.accounts.listForCustomer(deps.pool, SEED_CUSTOMER_ID);
   if (existing[0]) return { created: false, accountId: existing[0].account.id };
 

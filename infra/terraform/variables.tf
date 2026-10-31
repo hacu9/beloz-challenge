@@ -70,6 +70,22 @@ variable "app_config" {
     MAX_AMOUNT_CENTAVOS              = "100000000"
     PAYOUT_STUCK_MINUTES             = "5"
   }
+
+  # Review F1: these values become plain-text task environment. A secret must
+  # go through secrets.tf instead.
+  validation {
+    condition = alltrue([
+      for k in keys(var.app_config) :
+      !can(regex("(?i)(SECRET|PASSWORD|TOKEN|KEY|DATABASE_URL|CREDENTIAL)", k))
+    ])
+    error_message = "app_config is plain text: put secrets in Secrets Manager (secrets.tf), not here."
+  }
+}
+
+variable "alert_email" {
+  description = "Optional address subscribed to the alerts topic. Empty: wire the topic to the paging tool instead."
+  type        = string
+  default     = ""
 }
 
 variable "job_schedules" {

@@ -1,10 +1,15 @@
 import type { Deps } from "../deps.js";
 import { withTx } from "../platform/db/tx.js";
+import { withJobContext } from "./context.js";
 
 // SPEND-09 sweep. Correctness does not depend on it (authorize and capture
 // expire holds lazily under the account lock); it keeps the cached held_total
 // and the account view fresh for accounts with no new activity.
-export async function expireDueHolds(deps: Deps): Promise<{ accounts: number }> {
+export function expireDueHolds(deps: Deps): Promise<{ accounts: number }> {
+  return withJobContext("expire-holds", () => expireDueHoldsRun(deps));
+}
+
+async function expireDueHoldsRun(deps: Deps): Promise<{ accounts: number }> {
   const { rows } = await deps.pool.query<{ account_id: string }>(
     "SELECT DISTINCT account_id FROM holds WHERE status = 'open' AND expires_at <= $1",
     [deps.clock.now()],

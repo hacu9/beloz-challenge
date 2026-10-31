@@ -147,6 +147,29 @@ opencode2 (`gpt-6-luna`), two blind runs: closure + payouts, and refunds + repay
 | D-R-7 | B5: a cancelled return strands credit and blocks closure | CONFIRMED, merged into OQ-13 | Answered by OQ-13 below. |
 | D-R-8 | B6, B7 | REJECTED | Informational / caller outside the file set (`closure.ts`). |
 
+## Second blind review, the rest of the code (2026-10-31)
+
+Four opencode2 runs: C (HTTP, auth, idempotency, routes), D (ledger, audit, money, DB layer), E (payouts, closure and charge-offs after the fixes, reconcile, migrations 002/003/007), F (Terraform, Dockerfile, CI).
+
+| ID | Finding | Verdict | Action |
+|---|---|---|---|
+| C1 | Bank signature verified against an empty body when no JSON body was parsed | CONFIRMED, security, latent (probe: signed-over-nothing passed auth, stopped only by validation) | Fail closed without a raw body (SEC-04). |
+| C2 | Ops retry: a failed send after commit is not resent on replay | REJECTED | No money moves; the stuck flag shows it; ops can mark it failed and retry. |
+| D1 | Comment says the owner cannot bypass the append-only triggers | CONFIRMED (comment) | Corrected in migration 008 and architecture §3; 001 cannot change (checksum guard). |
+| D2 | `Ledger.post` writes no audit row | REJECTED | Callers write the audit row with the state change; the journal is the money record. |
+| D3 | Job audit rows have no request ID | CONFIRMED, robustness | Run ID per job run (AUDIT-01). |
+| D4 | A migration added before an applied one runs out of order | CONFIRMED, robustness | Refused (OPS-07). |
+| E1 | Ops marks an in-flight payout failed and retries: two bank calls | REJECTED as money-loss | Same payout ID; the bank dedupes (PAYOUT-06). |
+| E2 | Collateral-reference deposit returned while open debt exists | REJECTED | D-M6-1 (Henry). The brief's rule was too broad. |
+| E3 | Account closes with charged-off debt owed | REJECTED | OQ-04 (Henry). The brief's rule was too broad. |
+| F1 | A secret could be put in plain-text `app_config` | CONFIRMED | Terraform validation, proven by `terraform test`. |
+| F2 | Base image is a mutable tag | CONFIRMED | Pinned by digest. |
+| F3 | CI never builds the image | CONFIRMED | `docker build` step. |
+| F4 | Terraform does not run migrations | REJECTED | Release step 3 in deployment.md. |
+| F5 | Job-failure alarm notifies nobody | CONFIRMED | SNS topic as alarm and OK action, proven by `terraform test`. |
+
+Lesson for the next brief: state each rule *with* its deliberate exceptions (E2 and E3 came from rules written without D-M6-1 and OQ-04).
+
 ## OQ-13 answer (2026-10-31)
 
 | OQ | Decision |

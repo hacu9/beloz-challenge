@@ -13,6 +13,11 @@ output "migrate_task_definition" {
   value       = aws_ecs_task_definition.service["migrate"].arn
 }
 
+output "alerts_topic_arn" {
+  description = "Subscribe the paging tool here (job failures, reconcile drift)."
+  value       = aws_sns_topic.alerts.arn
+}
+
 output "db_endpoint" {
   description = "Private RDS endpoint."
   value       = aws_db_instance.main.address

@@ -98,7 +98,12 @@ export function requireBankSignature(opts: {
     if (Math.abs(nowSeconds - timestamp) > opts.toleranceSeconds) {
       throw unauthorized("bank signature timestamp outside the tolerance window");
     }
-    const expected = bankSignature(opts.secret, timestamp, req.rawBody ?? Buffer.alloc(0));
+    // Fail closed: no raw JSON body means nothing was signed that the route
+    // could act on (review C1). Never fall back to signing an empty body.
+    if (!req.rawBody || req.rawBody.length === 0) {
+      throw unauthorized("a signed JSON body is required");
+    }
+    const expected = bankSignature(opts.secret, timestamp, req.rawBody);
     if (!safeEqual(Buffer.from(match[2]!, "hex"), Buffer.from(expected, "hex"))) {
       throw unauthorized("invalid bank signature");
     }
