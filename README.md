@@ -7,6 +7,8 @@ application. TypeScript, Express 5, Postgres 16.
 
 Why it is built this way, in one page: [`docs/thinking-process.md`](docs/thinking-process.md).
 
+Every prompt and response of the AI-assisted build, in order: [`PROMPTS.md`](PROMPTS.md).
+
 To see the money move, start with [`docs/money-flow.md`](docs/money-flow.md):
 one account from deposit to close, every ledger entry, checked by a test.
 
