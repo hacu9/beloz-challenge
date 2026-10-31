@@ -176,6 +176,12 @@ Lesson for the next brief: state each rule *with* its deliberate exceptions (E2 
 |---|---|
 | OQ-13 | `cancel` parks the money until ops acts. Ops releases a parked payout (optionally with a new payout CLABE); without a release the account never closes (PAYOUT-15). |
 
+## OQ-14 answer (2026-10-31)
+
+| OQ | Decision |
+|---|---|
+| OQ-14 | The account records who froze it. A customer lifts only their own freeze; ops lifts any. An ops freeze on a customer-frozen account escalates it (otherwise the customer could lift a fraud freeze placed on top of their own). Henry: "a fraud freeze the customer can undo is pointless". |
+
 ## Dependency audit (2026-10-31)
 
 | Package | Severity | Scope | Action |

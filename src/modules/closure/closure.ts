@@ -53,7 +53,9 @@ export class Closure {
     const next = await this.accounts.update(
       tx,
       account,
-      empty ? { status: "closed" } : { status: "closing", closing_started_at: this.clock.now() },
+      empty
+        ? { status: "closed" }
+        : { status: "closing", closing_started_at: this.clock.now(), frozen_by: null },
       { actor: caller, action: empty ? "account.closed" : "account.closing" },
     );
     await this.accounts.setCardStatus(tx, account.id, "blocked", caller);

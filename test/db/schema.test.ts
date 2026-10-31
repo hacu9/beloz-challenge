@@ -110,13 +110,15 @@ describe("database guards", () => {
   });
 
   it("the account status CHECK includes frozen (OQ-11) and rejects unknown states", async () => {
-    const insert = (status: string) =>
+    const insert = (status: string, frozenBy: string | null = null) =>
       h.ownerPool.query(
-        `INSERT INTO accounts (customer_id, status, collateral_reference, repayment_reference, created_at, updated_at)
-         VALUES (gen_random_uuid(), $1, gen_random_uuid()::text, gen_random_uuid()::text, now(), now())`,
-        [status],
+        `INSERT INTO accounts (customer_id, status, frozen_by, collateral_reference, repayment_reference, created_at, updated_at)
+         VALUES (gen_random_uuid(), $1, $2, gen_random_uuid()::text, gen_random_uuid()::text, now(), now())`,
+        [status, frozenBy],
       );
-    await expect(insert("frozen")).resolves.toBeDefined();
+    // A frozen account must say who froze it (FREEZE-04).
+    await expect(insert("frozen", "ops")).resolves.toBeDefined();
+    await expect(insert("frozen")).rejects.toThrow(/accounts_frozen_by_matches_status/);
     await expect(insert("suspended")).rejects.toThrow(/check constraint/);
   });
 });

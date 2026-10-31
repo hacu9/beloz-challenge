@@ -154,3 +154,60 @@ describe("FREEZE-02: frozen declines new purchases only", () => {
     expect((await act(a.view.id, "unfreeze", a.auth)).status).toBe(409);
   });
 });
+
+describe("FREEZE-04: who froze it decides who can lift it (OQ-14)", () => {
+  it("a customer cannot lift an ops freeze (403); ops can", async () => {
+    const a = await activeAccount(app, h, 100_000);
+    const ops = await bearer("ops", h.clock);
+    expect((await act(a.view.id, "freeze", ops)).body).toMatchObject({
+      status: "frozen",
+      frozenBy: "ops",
+    });
+    const denied = await act(a.view.id, "unfreeze", a.auth);
+    expect(denied.status).toBe(403);
+    expect((await view(a.view.id)).status).toBe("frozen");
+    expect((await act(a.view.id, "unfreeze", ops)).body).toMatchObject({
+      status: "active",
+      frozenBy: null,
+    });
+  });
+
+  it("a customer lifts their own freeze; ops can lift it too", async () => {
+    const a = await activeAccount(app, h, 100_000);
+    expect((await act(a.view.id, "freeze", a.auth)).body.frozenBy).toBe("customer");
+    expect((await act(a.view.id, "unfreeze", await bearer("ops", h.clock))).body.status).toBe(
+      "active",
+    );
+  });
+
+  it("ops escalates a customer freeze, so the customer can no longer lift it", async () => {
+    const a = await activeAccount(app, h, 100_000);
+    const ops = await bearer("ops", h.clock);
+    await act(a.view.id, "freeze", a.auth); // lost wallet
+    const escalated = await act(a.view.id, "freeze", ops); // then fraud suspicion
+    expect(escalated.status).toBe(200);
+    expect(escalated.body).toMatchObject({ status: "frozen", frozenBy: "ops" });
+    expect((await act(a.view.id, "unfreeze", a.auth)).status).toBe(403);
+
+    const audit = await h.pool.query<{ action: string }>(
+      `SELECT action FROM audit_log WHERE entity_id = $1 AND action LIKE 'account.freeze%' ORDER BY id`,
+      [a.view.id],
+    );
+    expect(audit.rows.map((r) => r.action)).toEqual(["account.freeze_escalated"]);
+  });
+
+  it("closing a frozen account clears frozen_by (the database requires it)", async () => {
+    const a = await activeAccount(app, h, 100_000);
+    await act(a.view.id, "freeze", await bearer("ops", h.clock));
+    const closed = await act(a.view.id, "close", a.auth);
+    expect(closed.status).toBe(200);
+    expect(closed.body).toMatchObject({ status: "closing", frozenBy: null });
+  });
+
+  it("the database refuses frozen_by without the frozen status", async () => {
+    const a = await activeAccount(app, h, 100_000);
+    await expect(
+      h.ownerPool.query("UPDATE accounts SET frozen_by = 'ops' WHERE id = $1", [a.view.id]),
+    ).rejects.toThrow(/accounts_frozen_by_matches_status/);
+  });
+});

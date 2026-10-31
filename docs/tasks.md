@@ -239,6 +239,16 @@ D1 (a comment) and F2 (a digest pin) change no behaviour; F2 is proven by a buil
 | `frozen → closing` removed | FREEZE-03 |
 | Over-eager: captures refused while frozen | FREEZE-02 (money that already moved still settles) |
 
+**FREEZE-04 (OQ-14) mutations.**
+
+| Mutation | Test that goes red |
+|---|---|
+| A customer may lift an ops freeze | 403 test, escalation test |
+| No escalation of a customer freeze | escalation test |
+| Freeze always recorded as `customer` | 403 test |
+| Close keeps `frozen_by` | FREEZE-03, close test (the DB CHECK refuses the write) |
+| Unfreeze keeps `frozen_by` | 5 tests (the DB CHECK refuses the write) |
+
 ## M10 — Delivery
 
 - [ ] Export the Claude Code transcripts into `PROMPTS.md`, in order. (Q4)

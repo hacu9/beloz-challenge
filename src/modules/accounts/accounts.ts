@@ -3,7 +3,7 @@ import type pg from "pg";
 import type { Clock } from "../../platform/clock.js";
 import type { Queryable } from "../../platform/db/pool.js";
 import type { Tx } from "../../platform/db/tx.js";
-import { conflict, notFound } from "../../platform/errors.js";
+import { conflict, forbidden, notFound } from "../../platform/errors.js";
 import type { Centavos } from "../../platform/money.js";
 import type { Actor, AuditLog } from "../audit/audit.js";
 import type { Ledger } from "../ledger/ledger.js";
@@ -47,6 +47,8 @@ export interface Account {
   /** Part of credit_balance whose cash is in cash_collateral; returned, never netted (D-M6-1). */
   credit_returnable: Centavos;
   payout_clabe: string | null;
+  /** FREEZE-04: who froze the account; null unless status is frozen. */
+  frozen_by: "customer" | "ops" | null;
   /** CLOSE-07/09: charged-off debt the customer still owes (collections). */
   charged_off_outstanding: Centavos;
   activated_at: Date | null;
@@ -75,6 +77,7 @@ const UPDATABLE = [
   "credit_returnable",
   "charged_off_outstanding",
   "payout_clabe",
+  "frozen_by",
   "activated_at",
   "closing_started_at",
 ] as const;
@@ -96,6 +99,7 @@ export interface AccountView {
   collateralReference: string;
   payoutClabeLast4: string | null;
   chargedOffOutstanding: Centavos;
+  frozenBy: "customer" | "ops" | null;
   closingStartedAt: string | null;
   repaymentReference: string;
   card: { last4: string; status: CardStatus };
@@ -122,6 +126,7 @@ export function toView(account: Account, card: Card): AccountView {
     collateralReference: account.collateral_reference,
     payoutClabeLast4: account.payout_clabe?.slice(-4) ?? null,
     chargedOffOutstanding: account.charged_off_outstanding,
+    frozenBy: account.frozen_by,
     closingStartedAt: account.closing_started_at?.toISOString() ?? null,
     repaymentReference: account.repayment_reference,
     card: { last4: card.last4, status: card.status },
@@ -149,6 +154,7 @@ export const toAudit = (a: Account) => ({
   creditBalance: a.credit_balance,
   creditReturnable: a.credit_returnable,
   chargedOffOutstanding: a.charged_off_outstanding,
+  frozenBy: a.frozen_by,
 });
 
 // The accounts module owns the accounts and cards tables. Other modules read
@@ -323,6 +329,9 @@ export class Accounts {
   // FREEZE-01: active <-> frozen, by the customer (own account) or ops.
   // Captures, refunds, reversals and repayments ignore the status, so money
   // that already moved still settles while the account is frozen (FREEZE-02).
+  // FREEZE-04 (OQ-14): the account records who froze it. A customer lifts only
+  // their own freeze; ops lifts any, and an ops freeze on a customer-frozen
+  // account escalates it, so the customer can no longer lift it.
   async setFrozen(
     tx: Tx,
     accountId: string,
@@ -333,6 +342,21 @@ export class Accounts {
     if (!account || (caller.type === "customer" && account.customer_id !== caller.id)) {
       throw notFound("account not found");
     }
+
+    if (
+      frozen &&
+      account.status === "frozen" &&
+      caller.type === "ops" &&
+      account.frozen_by === "customer"
+    ) {
+      return this.update(
+        tx,
+        account,
+        { frozen_by: "ops" },
+        { actor: caller, action: "account.freeze_escalated" },
+      );
+    }
+
     const from: AccountStatus = frozen ? "active" : "frozen";
     if (account.status !== from) {
       throw conflict(
@@ -340,10 +364,13 @@ export class Accounts {
         `the account is ${account.status}`,
       );
     }
+    if (!frozen && caller.type === "customer" && account.frozen_by === "ops") {
+      throw forbidden("this freeze was placed by Acme; contact support to lift it");
+    }
     return this.update(
       tx,
       account,
-      { status: frozen ? "frozen" : "active" },
+      frozen ? { status: "frozen", frozen_by: caller.type } : { status: "active", frozen_by: null },
       { actor: caller, action: frozen ? "account.frozen" : "account.unfrozen" },
     );
   }

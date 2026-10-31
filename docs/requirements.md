@@ -114,6 +114,7 @@ Format: each requirement has an ID, one rule, and the source decision (`Q` =
 | FREEZE-01 | A customer (own account only, else 404) or ops shall be able to freeze an `active` account and unfreeze a `frozen` account. Any other state returns 409. Both calls need an `Idempotency-Key` and write an audit row. | Q2, Q20, Henry 2026-10-31 |
 | FREEZE-02 | A `frozen` account shall decline all new authorizations with reason `account_frozen`, and still post captures, reversals, refunds and repayments, because that money already moved. The card stays `active`. | Q2, Q15, Henry 2026-10-31 |
 | FREEZE-03 | A `frozen` account can be closed; closing blocks the card and ends the freeze. | Henry 2026-10-31 |
+| FREEZE-04 | The account shall record who froze it (`customer` or `ops`). A customer may lift only their own freeze; lifting an ops freeze returns 403. Ops may lift any freeze, and an ops freeze on a customer-frozen account escalates it to an ops freeze. The database refuses `frozen_by` without the `frozen` status. | OQ-14 |
 
 ## 8. Security (SEC)
 

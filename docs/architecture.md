@@ -59,7 +59,7 @@ Rule: only `ledger/` writes to the ledger tables. Other modules call
 
 ## 3. Data model
 
-Source of truth: `db/migrations/001..008`. The runner refuses an edited applied migration and one that sorts before an applied one (OPS-07). Summary (CHECKs abbreviated):
+Source of truth: `db/migrations/001..010`. The runner refuses an edited applied migration and one that sorts before an applied one (OPS-07). Summary (CHECKs abbreviated):
 
 ```sql
 accounts (id uuid pk, customer_id uuid,           -- one non-closed account per customer (partial unique index)
@@ -73,6 +73,7 @@ accounts (id uuid pk, customer_id uuid,           -- one non-closed account per 
   charged_off_outstanding bigint >= 0,             -- owed after charge-off (CLOSE-07/09)
   collateral_reference text unique, repayment_reference text unique,   -- OQ-07
   payout_clabe text,                               -- D-M6-3
+  frozen_by text customer|ops,                     -- set only while frozen (FREEZE-04)
   version bigint, activated_at, closing_started_at, created_at, updated_at timestamptz)
 cards (id, account_id unique, token unique, last4 char(4), status inactive|active|blocked)
 holds (id, account_id, network_auth_id unique, amount > 0,
@@ -339,7 +340,7 @@ mounted in `src/http/app.ts`. Every customer/ops write needs `Idempotency-Key`.
 | GET | `/v1/accounts` | customer (own accounts only) |
 | GET | `/v1/accounts/:id` | customer (own), ops |
 | POST | `/v1/accounts/:id/close` | customer (own), ops |
-| POST | `/v1/accounts/:id/freeze`, `/unfreeze` | customer (own), ops (FREEZE-01) |
+| POST | `/v1/accounts/:id/freeze`, `/unfreeze` | customer (own), ops (FREEZE-01). A customer cannot lift an ops freeze (403); an ops freeze escalates a customer one (FREEZE-04) |
 | POST | `/v1/network/authorizations` | network |
 | POST | `/v1/network/authorizations/:networkAuthId/reversal` | network |
 | POST | `/v1/network/captures` | network (`networkAuthId` optional: force post) |
