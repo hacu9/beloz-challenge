@@ -68,3 +68,13 @@ accepted them on 2026-10-31.
 | OQ-11 | `frozen` in the first migration | Yes. The endpoints stay in the backlog. |
 | OQ-12 | Late bank webhook for a payout | The webhook resolves the payout only while it is still `unknown`. If a person already resolved it, the webhook changes nothing; when its result differs from the person's, the service flags the mismatch for ops. |
 | COL-09 | Deposit below the minimum | Accepted as proposed: credit balance + payback, the account stays `pending_collateral`. |
+
+## Dependency audit (2026-10-31)
+
+| Package | Severity | Scope | Action |
+|---|---|---|---|
+| `zod` < 4.6.6 (GHSA-mrhx-c7xc-m3w5, memory exhaustion) | high | runtime | Upgraded to `zod@4.6.7`. |
+| `tinypool` via `vitest` (GHSA-5gmw-xhrv-c9v3, GHSA-85c8-ppgw-ccpr) | critical | dev | Upgraded to `vitest@5.0.5`. |
+| `minimatch` < 11.0.1 via `eslint` / `typescript-eslint` | moderate | dev | Accepted. npm's only "fix" downgrades to `eslint@4`. The ReDoS needs an attacker-controlled glob; ESLint only reads our own config. Revisit when ESLint ships a fixed chain. |
+
+`npm audit --omit=dev` reports 0 vulnerabilities. CI should run it as a gate (M9).
