@@ -32,7 +32,7 @@ Incoming money is the same story backwards. The bank can send the same webhook t
 
 I didn't trust green tests alone. Each important guard got removed on purpose to check its test goes red, and a couple of tests turned out to be passing for the wrong reason.
 
-The stress test throws 50 mixed requests at one account at once. Without the lock the customer ended up with 17,500 in credit instead of 10,000. That's 7,500 we'd pay out for nothing.
+The stress test throws 50 mixed requests at one account at once. Without the lock and the version check the customer ended up with 17,500 in credit instead of 10,000. That's 7,500 we'd pay out for nothing.
 
 Then two blind reviews with a non Anthropic model, only the code and the rules. Still found money bugs late, like paying out credit to someone who owed us. Fixed each one with a failing test first.
 
