@@ -159,29 +159,42 @@ describe("docs/money-flow.md", () => {
     });
     await record(6);
 
-    // Step 7: close.
+    // Step 7: freeze, a declined purchase, unfreeze. No journal entry.
+    const freeze = (action: "freeze" | "unfreeze") =>
+      request(app)
+        .post(`/v1/accounts/${view.id}/${action}`)
+        .set("Authorization", customer)
+        .set("Idempotency-Key", randomUUID())
+        .send({});
+    expect((await freeze("freeze")).body.status).toBe("frozen");
+    const declined = await authorize(app, authorization({ cardToken, amount: 1_000 }));
+    expect(declined.body).toMatchObject({ approved: false, declineReason: "account_frozen" });
+    expect((await freeze("unfreeze")).body.status).toBe("active");
+    await record(7);
+
+    // Step 8: close.
     await request(app)
       .post(`/v1/accounts/${view.id}/close`)
       .set("Authorization", customer)
       .set("Idempotency-Key", randomUUID())
       .send({});
-    await record(7);
+    await record(8);
 
-    // Step 8: late capture 50.00 (no authorization).
+    // Step 9: late capture 50.00 (no authorization).
     await network("/captures", {
       networkCaptureId: `cap_${randomUUID()}`,
       cardToken,
       amount: 5_000,
       currency: "MXN",
     });
-    await record(8);
-
-    // Step 9: 30 days later, settle.
-    h.clock.advanceMs(testConfig.closingCaptureWindowDays * 24 * 60 * 60 * 1000);
-    await progressClosures(h.deps, { accountIds: [view.id] });
     await record(9);
 
-    // Step 10: the bank confirms the collateral payout.
+    // Step 10: 30 days later, settle.
+    h.clock.advanceMs(testConfig.closingCaptureWindowDays * 24 * 60 * 60 * 1000);
+    await progressClosures(h.deps, { accountIds: [view.id] });
+    await record(10);
+
+    // Step 11: the bank confirms the collateral payout.
     const payouts = await h.pool.query<{ id: string; amount: number }>(
       "SELECT id, amount FROM payouts WHERE account_id = $1 AND status = 'requested'",
       [view.id],
@@ -193,11 +206,11 @@ describe("docs/money-flow.md", () => {
       h.clock,
     );
     await request(app).post("/v1/bank/webhooks").set(headers).send(payload);
-    await record(10);
-
-    // Step 11: closed.
-    await progressClosures(h.deps, { accountIds: [view.id] });
     await record(11);
+
+    // Step 12: closed.
+    await progressClosures(h.deps, { accountIds: [view.id] });
+    await record(12);
 
     // The balances table, cell by cell.
     const docBalances = tableAfter("balances").map(([step, status, ...amounts]) => [
@@ -226,6 +239,6 @@ describe("docs/money-flow.md", () => {
     const markers = [...DOC.matchAll(/<!-- check: ledger step=(\d+) -->/g)].map((m) =>
       Number(m[1]),
     );
-    expect(markers).toEqual([0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]);
+    expect(markers).toEqual([0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]);
   });
 });

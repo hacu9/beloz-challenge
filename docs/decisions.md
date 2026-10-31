@@ -182,6 +182,12 @@ Lesson for the next brief: state each rule *with* its deliberate exceptions (E2 
 |---|---|
 | OQ-14 | The account records who froze it. A customer lifts only their own freeze; ops lifts any. An ops freeze on a customer-frozen account escalates it (otherwise the customer could lift a fraud freeze placed on top of their own). Henry: "a fraud freeze the customer can undo is pointless". |
 
+## Money-flow review (2026-10-31)
+
+| ID | Decision | Reason |
+|---|---|---|
+| D-MF-1 | The collateral application (and the A1 and B3 recoveries) move cash between `cash_collateral` and `cash_operating` on the books with no bank transfer; ops runs a real treasury sweep to close the gap. Documented, not modelled in code. | Henry 2026-10-31 spotted that step 9 of the walkthrough does what M6 refused for netting (D-M6-1). The collateral must cover the debt, so the gap is accepted and named. Modelling the sweep as its own journal is the clean next step. |
+
 ## Dependency audit (2026-10-31)
 
 | Package | Severity | Scope | Action |

@@ -169,6 +169,21 @@ so the whole ledger sums to zero.
 | Return payout completed (credited deposit) | `customer_credit` | `cash_collateral` |
 | Credit netting (PAYOUT-10) | `customer_credit` | `customer_receivable` |
 
+**Treasury sweeps (D-MF-1).** `cash_collateral` and `cash_operating` mirror two
+real bank accounts. Three entries move money between them on the books only:
+the collateral application and the A1 recovery from collateral post
+`cash_operating` debit / `cash_collateral` credit, and a B3 recovery leaves
+Acme's own money (no longer collateral) in `cash_collateral`. In each case the
+cash is still in the segregated bank account. Ops closes the gap with a treasury
+sweep, a real transfer to the operating account; until then the two bank
+statements differ from the ledger by that amount. The service does not post or
+track the sweep today. Doing it in code would mean posting these entries
+without the cash lines, plus a `treasury_sweep` journal when ops confirms the
+transfer.
+
+**Freeze writes no journal entry.** Freeze and unfreeze change only the account
+status and `frozen_by`; the money-flow walkthrough (step 7) proves it.
+
 Cached counters on `accounts`: `credit_limit` = balance of `customer_collateral`,
 `posted_debt` = balance of `customer_receivable`, `credit_balance` = balance of
 `customer_credit`. The reconciliation command (OPS-03) recomputes them.

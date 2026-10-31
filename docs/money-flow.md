@@ -34,14 +34,15 @@ flowchart LR
   end
   CB -- "1. deposit 5,000.00" --> CC
   CC -. "mirrors" .-> COL
-  NP -- "3. capture 1,150.00<br/>6. capture 450.00<br/>8. late capture 50.00" --> REC
+  NP -- "3. capture 1,150.00<br/>6. capture 450.00<br/>9. late capture 50.00" --> REC
   REC -- "4. refund 150.00" --> NP
   CB -- "5. repayment 1,300.00" --> CO
   CO -. "1,000.00 pays debt" .-> REC
   CO -. "300.00 overpaid" .-> CR
   CR -- "6. netting 300.00" --> REC
-  COL -- "9. collateral pays 200.00 of debt" --> REC
-  CC -- "10. payout 4,800.00" --> CB
+  COL -- "10. collateral pays 200.00 of debt" --> REC
+  CC -. "ops treasury sweep 200.00<br/>(real bank transfer, after step 10)" .-> CO
+  CC -- "11. payout 4,800.00" --> CB
 ```
 
 ```mermaid
@@ -57,12 +58,13 @@ sequenceDiagram
   N->>S: 4. refund 150.00
   B->>S: 5. transfer.received 1,300.00 (repayment ref)
   N->>S: 6. authorize + capture 450.00 (credit nets)
-  C->>S: 7. close
-  N->>S: 8. late capture 50.00
-  S->>S: 9. 30 days later: settle (collateral pays debt)
+  C->>S: 7. freeze; a purchase is declined; unfreeze
+  C->>S: 8. close
+  N->>S: 9. late capture 50.00
+  S->>S: 10. 30 days later: settle (collateral pays debt)
   S->>B: payout 4,800.00
-  B->>S: 10. payout.completed
-  S->>S: 11. closed
+  B->>S: 11. payout.completed
+  S->>S: 12. closed
 ```
 
 ## Step by step
@@ -142,35 +144,54 @@ it pays part of the new debt at once (PAYOUT-10). 150.00 stays owed.
 | credit_netting | customer_credit | 300.00 | |
 | credit_netting | customer_receivable | | 300.00 |
 
-### Step 7: the customer closes the account
+### Step 7: the customer freezes the card, then unfreezes it
 
-The account moves to `closing` and the card is blocked: every new authorization
-is declined from now on. The debt stays; nothing is paid back yet.
+The customer misplaces the card and freezes the account. A purchase is
+declined with `account_frozen`. The customer finds the card and unfreezes it.
+Freeze and unfreeze only change the account status (and who froze it): they
+write no journal entry, and they move no money. A capture, refund or repayment
+would still have posted while the account was frozen (FREEZE-02).
 
 <!-- check: ledger step=7 -->
 No journal entry.
 
-### Step 8: a late 50.00 capture arrives
+### Step 8: the customer closes the account
+
+The account moves to `closing` and the card is blocked: every new authorization
+is declined from now on. The debt stays; nothing is paid back yet.
+
+<!-- check: ledger step=8 -->
+No journal entry.
+
+### Step 9: a late 50.00 capture arrives
 
 A capture cannot be refused (SPEND-06): the network already paid the merchant.
 It posts even though the account is closing.
 
-<!-- check: ledger step=8 -->
+<!-- check: ledger step=9 -->
 | Journal | Ledger account | Debit | Credit |
 |---|---|---|---|
 | capture | customer_receivable | 50.00 | |
 | capture | network_payable | | 50.00 |
 
-### Step 9: 30 days later, the closure job settles the account
+### Step 10: 30 days later, the closure job settles the account
 
 The late-capture window has passed and no hold is open, so the account moves to
-`settling`. The collateral pays the 200.00 debt first (CLOSE-04, CLOSE-06). The
-journal has four lines because the collateral is cash in the segregated bank
-account: using it for debt moves it, on the books, to operating cash. Then the
-job requests a payout of the remaining 4,800.00 from the collateral account. A
-payout moves nothing in the ledger until the bank confirms it (PAYOUT-05).
+`settling`. The collateral pays the 200.00 debt first (CLOSE-04, CLOSE-06). Then
+the job requests a payout of the remaining 4,800.00 from the collateral account.
+A payout moves nothing in the ledger until the bank confirms it (PAYOUT-05).
 
-<!-- check: ledger step=9 -->
+**The four lines and the treasury sweep.** The journal moves 200.00 from
+`cash_collateral` to `cash_operating`, but no bank transfer happens here: the
+200.00 is still in the segregated collateral bank account. Ops closes that gap
+with a **treasury sweep**, a real transfer of 200.00 from the collateral bank
+account to the operating bank account. Until the sweep, the collateral account's
+bank statement shows 200.00 more than `cash_collateral` in the ledger, and the
+operating account 200.00 less than `cash_operating`. This is the same kind of gap
+that M6 refused for credit netting (D-M6-1); here it is accepted because the
+collateral must cover the debt, and the sweep closes it (D-MF-1).
+
+<!-- check: ledger step=10 -->
 | Journal | Ledger account | Debit | Credit |
 |---|---|---|---|
 | collateral_application | customer_collateral | 200.00 | |
@@ -178,26 +199,26 @@ payout moves nothing in the ledger until the bank confirms it (PAYOUT-05).
 | collateral_application | customer_receivable | | 200.00 |
 | collateral_application | cash_collateral | | 200.00 |
 
-### Step 10: the bank confirms the 4,800.00 payout
+### Step 11: the bank confirms the 4,800.00 payout
 
-<!-- check: ledger step=10 -->
+<!-- check: ledger step=11 -->
 | Journal | Ledger account | Debit | Credit |
 |---|---|---|---|
 | collateral_payout | customer_collateral | 4,800.00 | |
 | collateral_payout | cash_collateral | | 4,800.00 |
 
-### Step 11: the closure job closes the account
+### Step 12: the closure job closes the account
 
 Debt, holds, collateral and credit are all zero and no payout is open
 (CLOSE-05, PAYOUT-07), so the account is `closed`.
 
-<!-- check: ledger step=11 -->
+<!-- check: ledger step=12 -->
 No journal entry.
 
 ## Balances after each step
 
 "Available" is what a new authorization could use: limit − debt − holds. From
-step 7 on, every authorization is declined because of the account status, not
+step 8 on, every authorization is declined because of the account status, not
 the amount.
 
 <!-- check: balances -->
@@ -210,11 +231,12 @@ the amount.
 | 4 | active | 5,000.00 | 0.00 | 1,000.00 | 0.00 | 4,000.00 |
 | 5 | active | 5,000.00 | 0.00 | 0.00 | 300.00 | 5,000.00 |
 | 6 | active | 5,000.00 | 0.00 | 150.00 | 0.00 | 4,850.00 |
-| 7 | closing | 5,000.00 | 0.00 | 150.00 | 0.00 | 4,850.00 |
-| 8 | closing | 5,000.00 | 0.00 | 200.00 | 0.00 | 4,800.00 |
-| 9 | settling | 4,800.00 | 0.00 | 0.00 | 0.00 | 4,800.00 |
-| 10 | settling | 0.00 | 0.00 | 0.00 | 0.00 | 0.00 |
-| 11 | closed | 0.00 | 0.00 | 0.00 | 0.00 | 0.00 |
+| 7 | active | 5,000.00 | 0.00 | 150.00 | 0.00 | 4,850.00 |
+| 8 | closing | 5,000.00 | 0.00 | 150.00 | 0.00 | 4,850.00 |
+| 9 | closing | 5,000.00 | 0.00 | 200.00 | 0.00 | 4,800.00 |
+| 10 | settling | 4,800.00 | 0.00 | 0.00 | 0.00 | 4,800.00 |
+| 11 | settling | 0.00 | 0.00 | 0.00 | 0.00 | 0.00 |
+| 12 | closed | 0.00 | 0.00 | 0.00 | 0.00 | 0.00 |
 
 ## Where the money ended up
 
@@ -235,3 +257,7 @@ customer nothing and the customer owes Acme nothing. The collateral account is
 empty: 5,000.00 came in, 200.00 paid debt, 4,800.00 went back. Operating cash
 holds 1,500.00, exactly what Acme owes the card network for the customer's net
 purchases (1,150.00 − 150.00 + 450.00 + 50.00). The sum of the column is zero.
+
+These are **ledger** balances. At the bank, 200.00 of that operating cash still
+sits in the collateral account until ops runs the treasury sweep (step 10). The
+freeze in step 7 appears nowhere in this table: it moved no money.
