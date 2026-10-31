@@ -12,6 +12,7 @@ behaviour updates the spec in the same commit.
 | [architecture.md](architecture.md) | How the service does it: modules, data model, ledger, state machines, concurrency, security. |
 | [tasks.md](tasks.md) | Milestones and tasks. Each task names the requirement IDs it covers. |
 | [decisions.md](decisions.md) | The decision log (Q1–Q32) with the reason for each decision. |
+| [money-flow.md](money-flow.md) | One account from deposit to close with real numbers and every ledger entry. Executable: a test replays it. |
 | [deployment.md](deployment.md) | AWS deployment: the Terraform, the release steps, the trade-offs. |
 | [open-questions.md](open-questions.md) | Questions that still need an answer. A task that depends on one stays blocked. |
 

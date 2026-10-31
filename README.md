@@ -5,6 +5,9 @@ deposit, card activation, purchase authorization with holds, capture and
 refund, repayment, payouts, and account closure with collateral release or
 application. TypeScript, Express 5, Postgres 16.
 
+To see the money move, start with [`docs/money-flow.md`](docs/money-flow.md):
+one account from deposit to close, every ledger entry, checked by a test.
+
 The design and every decision behind it are in [`docs/`](docs/README.md),
 written spec-first: requirements with IDs, the architecture, a decision log,
 and milestones. Every test names the requirement it proves.
