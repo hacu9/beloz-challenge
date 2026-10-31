@@ -211,6 +211,19 @@ OPS-05 (the demo) and OPS-06 (CI) are proved by running them, not by unit tests.
 
 D1 (a comment) and F2 (a digest pin) change no behaviour; F2 is proven by a build from the pinned digest, which CI now runs (F3).
 
+## Stress test (done 2026-10-31)
+
+- [x] 50 concurrent mixed requests on one account, 3 rounds (SPEND-17): all 200, never over the limit at any recorded state, no lost update, exact end balances, reconcile clean.
+
+**Mutation checks.**
+
+| Mutation | Result |
+|---|---|
+| No `FOR UPDATE` on the account | red (version conflicts surface as failed requests) |
+| No `FOR UPDATE` and no version check | red: credit balance 8,000 / 17,500 instead of 10,000 (lost updates) |
+| No advisory lock on the capture ID | red (duplicate captures collide) |
+| Capture does not net credit | red (debt and credit both above zero) |
+
 ## M10 — Delivery
 
 - [ ] Export the Claude Code transcripts into `PROMPTS.md`, in order. (Q4)

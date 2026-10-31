@@ -55,6 +55,7 @@ Format: each requirement has an ID, one rule, and the source decision (`Q` =
 | SPEND-09 | A hold shall expire `HOLD_TTL_DAYS` after its creation. An expired hold shall not count in `held_total`. | Q15, P7 |
 | SPEND-10 | A refund shall post a credit to the customer. A refund larger than the debt shall put the excess in the customer credit balance. | Q15, Q18 |
 | SPEND-11 | Each network authorization ID, capture ID and refund ID shall be processed only once. A retried authorization shall get the first decision, approved or declined. | Q14 |
+| SPEND-17 | Under 50 concurrent mixed requests on one account (purchases, captures, duplicate captures, reversals, refunds, repayments), every request shall succeed, no recorded account state shall exceed the limit, and the final balances shall be the same for every order the database chooses. | Henry 2026-10-31 |
 | SPEND-12 | A credit balance (overpayment, credited deposit) shall never raise available credit. Available credit is `credit_limit - posted_debt - held_total` and never includes `credit_balance`. | Henry 2026-10-31 |
 | SPEND-14 | A capture or refund that names an unknown card token shall return HTTP 422 `card_not_found`. A capture without a known authorization shall still post (force post). | OQ-08 |
 | SPEND-15 | A reversal of a captured authorization shall return HTTP 409. A reversal of an expired, reversed or declined authorization shall change nothing. An unknown authorization ID shall return 404. | Q15 |

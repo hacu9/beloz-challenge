@@ -275,7 +275,8 @@ COMMIT
 - **Reversal**: authorization → account row lock → hold row lock. The account
   lock matters even though the hold lock serialises capture vs reversal: without
   it a reversal racing a new authorization overwrites `held_total` (lost update).
-- Lock order is always: idempotency key (or the network/bank ID advisory lock), then account row, then hold row. One account per
+- Lock order is always: idempotency key (or the network/bank ID advisory lock), then account row, then hold row.
+- **Stress proof** (`test/stress/mixed-load.test.ts`, SPEND-17): 50 mixed requests at once on one account, 3 rounds. Every account state in the audit log stays within the limit, the version equals the audit count, and the end balances are exact. With the row lock and version check removed, the same test ends with a credit balance of 8,000 or 17,500 instead of 10,000: lost updates of money counters. One account per
   transaction. So no deadlock between two money calls.
 - The account row lock is the guard for SPEND-03. The test fires 20 parallel
   authorizations whose sum exceeds the limit and asserts that
