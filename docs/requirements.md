@@ -74,7 +74,7 @@ Format: each requirement has an ID, one rule, and the source decision (`Q` =
 
 | ID | Requirement | Source |
 |---|---|---|
-| PAYOUT-01 | A payout shall have one of four states: `requested`, `completed`, `failed`, `unknown`. | OQ-06 |
+| PAYOUT-01 | A payout shall have one of five states: `requested`, `completed`, `failed`, `unknown`, `cancelled` (ops gave up on a failed payout). | OQ-06, D-M6-4 |
 | PAYOUT-02 | When the bank call times out or gives an unclear answer, the payout shall become `unknown`, never `failed`. | OQ-06 |
 | PAYOUT-03 | The service shall never retry a payout on its own. | OQ-06 |
 | PAYOUT-04 | Only ops shall resolve an `unknown` or `failed` payout. Each resolution shall write an audit row. | OQ-06, Q23 |
@@ -82,6 +82,10 @@ Format: each requirement has an ID, one rule, and the source decision (`Q` =
 | PAYOUT-06 | Each payout request to the bank shall carry the payout ID as the bank idempotency key. | OQ-06 |
 | PAYOUT-07 | The service shall not move an account to `closed` while a payout of that account is not `completed`. | OQ-06, Q19 |
 | PAYOUT-08 | A signed bank result webhook shall resolve a payout only while it is `unknown` or `requested`. | OQ-12 |
+| PAYOUT-10 | Free credit (credit balance that is not returnable and not in an open payout) shall pay new debt when a capture posts. Credit in a `requested`, `unknown` or `failed` payout shall not net. | Henry 2026-10-31 |
+| PAYOUT-11 | A deposit credited to the customer (COL-07, COL-09) shall go back as a `return` payout from `cash_collateral` and shall never net against debt. | D-M6-1 |
+| PAYOUT-12 | Payouts shall go to the payout CLABE the customer gave when opening the account. Opening an account without an 18-digit payout CLABE shall return 422. | D-M6-3 |
+| PAYOUT-13 | A scheduled job shall create the due payouts and send each one after its commit, with no lock held during the bank call. | REPAY-04 |
 | PAYOUT-09 | When a bank result webhook arrives for a payout that a person already resolved, the service shall not change the payout. If the results differ, it shall flag a mismatch for ops and write an audit row. | OQ-12 |
 
 ## 6. Closure and collateral release (CLOSE)

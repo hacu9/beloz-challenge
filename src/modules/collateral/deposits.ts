@@ -1,11 +1,11 @@
 import { z } from "zod";
 import type { Clock } from "../../platform/clock.js";
 import type { Tx } from "../../platform/db/tx.js";
-import { AppError, conflict } from "../../platform/errors.js";
+import { conflict } from "../../platform/errors.js";
 import { addCentavos, type Centavos } from "../../platform/money.js";
 import type { Account, Accounts } from "../accounts/accounts.js";
 import type { Actor, AuditLog } from "../audit/audit.js";
-import { transfer, type Ledger } from "../ledger/ledger.js";
+import { transfer, type JournalLineInput, type Ledger } from "../ledger/ledger.js";
 
 // A SPEI-style transfer that already landed in one of Acme's bank accounts.
 // The bank does not know why the money came; the reference tells us (OQ-07).
@@ -21,7 +21,11 @@ export const TransferReceived = z.object({
 export type TransferReceived = z.infer<typeof TransferReceived>;
 
 export type DepositOutcome =
-  "collateral_confirmed" | "credited_below_minimum" | "credited_for_payback" | "unapplied";
+  | "collateral_confirmed"
+  | "credited_below_minimum"
+  | "credited_for_payback"
+  | "unapplied"
+  | "repayment_applied";
 
 export interface DepositResult {
   bankTxnId: string;
@@ -89,8 +93,7 @@ export class Deposits {
       }));
       outcome = "unapplied";
     } else if (target.purpose === "repayment") {
-      // Rolls back and records nothing, so the bank retries once M6 ships.
-      throw new AppError(501, "not_implemented", "repayments are not supported yet (M6)");
+      ({ outcome, journalId } = await this.applyRepayment(tx, target.account, event.amount));
     } else {
       ({ outcome, journalId } = await this.applyToAccount(tx, target.account, event.amount));
     }
@@ -170,9 +173,47 @@ export class Deposits {
     await this.accounts.update(
       tx,
       account,
-      { credit_balance: addCentavos(account.credit_balance, amount) },
+      {
+        credit_balance: addCentavos(account.credit_balance, amount),
+        // D-M6-1: this cash is in the collateral account; it goes back as a
+        // return of this transfer and never nets against debt.
+        credit_returnable: addCentavos(account.credit_returnable, amount),
+      },
       { actor: BANK, action: `account.${outcome}` },
     );
     return { outcome, journalId };
+  }
+
+  // REPAY-01..03: a repayment pays the debt first; the rest is credit that
+  // nets against new debt or is paid back (PAYOUT-10, REPAY-04). Any account
+  // state accepts it: the money already landed (CLOSE-08).
+  private async applyRepayment(
+    tx: Tx,
+    account: Account,
+    amount: Centavos,
+  ): Promise<{ outcome: DepositOutcome; journalId: string }> {
+    const own = await this.ledger.customerAccounts(tx, account.id);
+    const toDebt = Math.min(amount, account.posted_debt);
+    const toCredit = amount - toDebt;
+    const lines: JournalLineInput[] = [
+      { ledgerAccountId: await this.ledger.systemAccountId(tx, "cash_operating"), amount },
+    ];
+    if (toDebt > 0) lines.push({ ledgerAccountId: own.customer_receivable, amount: -toDebt });
+    if (toCredit > 0) lines.push({ ledgerAccountId: own.customer_credit, amount: -toCredit });
+    const { journalId } = await this.ledger.post(tx, {
+      kind: "repayment",
+      accountId: account.id,
+      lines,
+    });
+    await this.accounts.update(
+      tx,
+      account,
+      {
+        posted_debt: account.posted_debt - toDebt,
+        credit_balance: addCentavos(account.credit_balance, toCredit),
+      },
+      { actor: BANK, action: "account.repayment_applied" },
+    );
+    return { outcome: "repayment_applied", journalId };
   }
 }

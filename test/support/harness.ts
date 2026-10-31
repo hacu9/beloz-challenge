@@ -2,6 +2,7 @@ import type { AddressInfo } from "node:net";
 import type { Express } from "express";
 import { Writable } from "node:stream";
 import { buildDeps, type Deps } from "../../src/deps.js";
+import { FakeBankApi } from "../../src/fakes/fake-bank.js";
 import { buildApp, type AppOptions } from "../../src/http/app.js";
 import { FixedClock } from "../../src/platform/clock.js";
 import type { Config } from "../../src/platform/config.js";
@@ -26,6 +27,8 @@ export const testConfig: Config = {
 export interface Harness {
   deps: Deps;
   clock: FixedClock;
+  /** The simulated bank payout API; set `bank.mode` to accept, reject or time out. */
+  bank: FakeBankApi;
   /** Connects as acme_app, like the service. */
   pool: Pool;
   /** Connects as the table owner, to test the triggers without the grants. */
@@ -48,10 +51,18 @@ export function createHarness(): Harness {
   });
   const pool = createPool(APP_URL, 40);
   const ownerPool = createPool(OWNER_URL, 5);
-  const deps = buildDeps({ config: testConfig, pool, clock, logger: createLogger("info", sink) });
+  const bank = new FakeBankApi();
+  const deps = buildDeps({
+    config: testConfig,
+    pool,
+    clock,
+    bank,
+    logger: createLogger("info", sink),
+  });
   return {
     deps,
     clock,
+    bank,
     pool,
     ownerPool,
     logLines,

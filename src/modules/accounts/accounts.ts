@@ -42,6 +42,9 @@ export interface Account {
   posted_debt: Centavos;
   held_total: Centavos;
   credit_balance: Centavos;
+  /** Part of credit_balance whose cash is in cash_collateral; returned, never netted (D-M6-1). */
+  credit_returnable: Centavos;
+  payout_clabe: string | null;
   collateral_reference: string;
   repayment_reference: string;
   version: number;
@@ -64,6 +67,7 @@ const UPDATABLE = [
   "posted_debt",
   "held_total",
   "credit_balance",
+  "credit_returnable",
   "closing_started_at",
 ] as const;
 
@@ -82,6 +86,7 @@ export interface AccountView {
   heldTotal: Centavos;
   creditBalance: Centavos;
   collateralReference: string;
+  payoutClabeLast4: string | null;
   repaymentReference: string;
   card: { last4: string; status: CardStatus };
   createdAt: string;
@@ -105,6 +110,7 @@ export function toView(account: Account, card: Card): AccountView {
     heldTotal: account.held_total,
     creditBalance: account.credit_balance,
     collateralReference: account.collateral_reference,
+    payoutClabeLast4: account.payout_clabe?.slice(-4) ?? null,
     repaymentReference: account.repayment_reference,
     card: { last4: card.last4, status: card.status },
     createdAt: account.created_at.toISOString(),
@@ -129,6 +135,7 @@ export const toAudit = (a: Account) => ({
   postedDebt: a.posted_debt,
   heldTotal: a.held_total,
   creditBalance: a.credit_balance,
+  creditReturnable: a.credit_returnable,
 });
 
 // The accounts module owns the accounts and cards tables. Other modules read
@@ -141,14 +148,19 @@ export class Accounts {
   ) {}
 
   /** COL-01: a new account waits for collateral; its card is inactive. */
-  async open(tx: Tx, customerId: string, actor: Actor): Promise<{ account: Account; card: Card }> {
+  async open(
+    tx: Tx,
+    customerId: string,
+    payoutClabe: string,
+    actor: Actor,
+  ): Promise<{ account: Account; card: Card }> {
     const now = this.clock.now();
     let account: Account;
     try {
       const { rows } = await tx.query<Account>(
-        `INSERT INTO accounts (customer_id, status, collateral_reference, repayment_reference, created_at, updated_at)
-         VALUES ($1, 'pending_collateral', $2, $3, $4, $4) RETURNING *`,
-        [customerId, fakeClabe(), fakeClabe(), now],
+        `INSERT INTO accounts (customer_id, status, collateral_reference, repayment_reference, payout_clabe, created_at, updated_at)
+         VALUES ($1, 'pending_collateral', $2, $3, $4, $5, $5) RETURNING *`,
+        [customerId, fakeClabe(), fakeClabe(), payoutClabe, now],
       );
       account = rows[0]!;
     } catch (err) {

@@ -150,6 +150,8 @@ so the whole ledger sums to zero.
 | Apply collateral to debt | `customer_collateral` + `cash_operating` | `customer_receivable` + `cash_collateral` |
 | Collateral payout completed | `customer_collateral` | `cash_collateral` |
 | Credit payout completed | `customer_credit` | `cash_operating` |
+| Return payout completed (credited deposit) | `customer_credit` | `cash_collateral` |
+| Credit netting (PAYOUT-10) | `customer_credit` | `customer_receivable` |
 
 Cached counters on `accounts`: `credit_limit` = balance of `customer_collateral`,
 `posted_debt` = balance of `customer_receivable`, `credit_balance` = balance of
@@ -161,12 +163,14 @@ credit balance stays reserved (overpayment).
 
 ```mermaid
 stateDiagram-v2
-  [*] --> requested
-  requested --> completed: bank says paid
-  requested --> failed: bank says rejected
+  [*] --> requested: send-payouts job
+  requested --> completed: bank webhook or ops
+  requested --> failed: bank rejects / webhook / ops
   requested --> unknown: timeout / unclear answer
   unknown --> completed: bank webhook or ops
   unknown --> failed: bank webhook or ops
+  failed --> requested: ops retry (same payout ID)
+  failed --> cancelled: ops cancel
 ```
 
 - The service never retries a payout on its own (PAYOUT-03). A timeout is
@@ -174,6 +178,15 @@ stateDiagram-v2
 - Each bank request carries the payout ID as its idempotency key (PAYOUT-06). So
   if ops decides to retry, the bank can still dedupe.
 - An ops resolution writes an audit row with the evidence reference (PAYOUT-04).
+- **Credit buckets.** `credit_balance` splits into *returnable* (cash in
+  `cash_collateral`, from a credited deposit: goes back as a `return` payout,
+  never nets) and the rest. Of the rest, money in an open credit payout is
+  reserved; what is left is *free* and nets against new debt at capture time
+  (PAYOUT-10). Netting stops the moment the job creates a payout.
+- **Known gaps for ops.** A payout stuck in `requested` with no `submitted_at`
+  (the process died between commit and the bank call) appears in
+  `GET /v1/ops/payouts?status=requested`; nothing resends it. A cancelled
+  `return` keeps its credit returnable and is not re-created; a person decides.
 - A late bank webhook resolves a payout only while it is `unknown` (PAYOUT-08).
   After a person resolved it, the webhook changes nothing; a different result
   raises a mismatch flag for ops (PAYOUT-09).
@@ -297,7 +310,7 @@ returns 422 (IDEM-04). A network or bank duplicate returns the first result.
 | POST | `/v1/network/refunds` | network |
 | GET | `/v1/accounts` | customer (own accounts only) |
 | POST | `/v1/bank/webhooks` | bank (`transfer.received`; M6 adds `payout.completed`, `payout.failed`) |
-| GET | `/v1/ops/payouts?status=unknown,failed` | ops |
+| GET | `/v1/ops/payouts?status=…&mismatch=…&accountId=…` | ops |
 | POST | `/v1/ops/payouts/:id/resolve` | ops |
 | GET | `/v1/ops/unapplied-funds` | ops |
 
@@ -306,6 +319,7 @@ returns 422 (IDEM-04). A network or bank duplicate returns the first result.
 All jobs read the injectable clock and take the account lock like any other writer.
 
 - Run with `npm run job -- <name>` locally, `node dist/jobs/cli.js <name>` in a container.
+- `send-payouts`: creates the due `return` and `credit` payouts per account (one transaction each, under the account lock), then sends each one after commit.
 - `expire-holds`: marks overdue holds `expired` and lowers `held_total`. The authorize path also expires holds lazily, so correctness does not depend on the job. Until the job runs, `GET /v1/accounts/:id` can show an overdue hold in `heldTotal`; the next authorization never sees it.
 - `progress-closures`: moves `closing` → `settling`, posts the collateral application, requests the payouts.
 - `reconcile`: OPS-03.

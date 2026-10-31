@@ -7,6 +7,8 @@ import { notFound } from "../../platform/errors.js";
 import { toView } from "./accounts.js";
 
 const AccountId = z.string().uuid();
+// D-M6-3: the customer's own bank account (CLABE) that receives payouts.
+const OpenAccountBody = z.object({ payoutClabe: z.string().regex(/^\d{18}$/) });
 
 function userOf(req: express.Request): { type: "customer" | "ops"; id: string } {
   const p = req.principal;
@@ -23,8 +25,9 @@ export function accountRoutes(deps: Deps): Router {
   // COL-01
   r.post("/", customer, requireIdempotencyKey(), async (req, res) => {
     const caller = userOf(req);
+    const body = OpenAccountBody.parse(req.body);
     await sendIdempotent(req, res, deps, async (tx) => {
-      const { account, card } = await accounts.open(tx, caller.id, caller);
+      const { account, card } = await accounts.open(tx, caller.id, body.payoutClabe, caller);
       return { status: 201, body: { ...toView(account, card) } };
     });
   });

@@ -1,17 +1,25 @@
 import { afterAll, describe, expect, it } from "vitest";
+import { createPool, type Pool } from "../../src/platform/db/pool.js";
 import { withTx } from "../../src/platform/db/tx.js";
 import { transfer } from "../../src/modules/ledger/ledger.js";
+import { ISOLATED_OWNER_URL } from "../support/env.js";
 import { createHarness } from "../support/harness.js";
 
 const h = createHarness();
-afterAll(() => h.close());
+// Owner connection to the isolated copy: table-wide statements there cannot
+// block or deadlock the test files that run in parallel on acme_test.
+const isolated = createPool(ISOLATED_OWNER_URL, 2);
+afterAll(async () => {
+  await h.close();
+  await isolated.end();
+});
 
 // Writes one journal entry and one audit row. A row trigger fires only on an
 // existing row, so each guard test seeds its own rows instead of relying on
 // other test files to have written some first.
-async function postSample(): Promise<string> {
+async function postSample(pool: Pool = h.pool): Promise<string> {
   const { ledger, audit } = h.deps;
-  return withTx(h.pool, async (tx) => {
+  return withTx(pool, async (tx) => {
     await audit.write(tx, {
       actor: { type: "system" },
       action: "schema.sample",
@@ -79,14 +87,14 @@ describe("database guards", () => {
 
   describe.each(["journal_entries", "journal_lines", "audit_log"])("%s", (table) => {
     it("LEDGER-04 / AUDIT-03: the trigger blocks UPDATE, DELETE and TRUNCATE for the owner", async () => {
-      await postSample();
+      await postSample(isolated);
       const column = table === "journal_lines" ? "amount = amount" : "id = id";
       for (const sql of [
         `UPDATE ${table} SET ${column}`,
         `DELETE FROM ${table}`,
         `TRUNCATE ${table} CASCADE`,
       ]) {
-        await expect(h.ownerPool.query(sql), sql).rejects.toThrow(/append-only table/);
+        await expect(isolated.query(sql), sql).rejects.toThrow(/append-only table/);
       }
     });
 

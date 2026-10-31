@@ -32,6 +32,7 @@ export type JournalKind =
   | "collateral_payout"
   | "credit_payout"
   | "chargeoff"
+  | "credit_netting"
   | "correction";
 
 export interface JournalLineInput {

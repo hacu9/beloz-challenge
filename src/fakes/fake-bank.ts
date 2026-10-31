@@ -1,9 +1,15 @@
 import { randomUUID } from "node:crypto";
 import type { Clock } from "../platform/clock.js";
 import { BANK_SIGNATURE_HEADER, bankSignature } from "../http/middleware/auth.js";
+import {
+  BankUnknownOutcomeError,
+  type BankClient,
+  type PayoutInstruction,
+  type PayoutSubmission,
+} from "../modules/payouts/bank-client.js";
 
-// Simulated bank (Q5). It signs webhooks like a real bank would. M6 adds the
-// payout endpoint.
+// Simulated bank (Q5). It signs webhooks like a real bank would, and takes
+// payout requests (FakeBankApi).
 export function signWebhook(
   body: unknown,
   secret: string,
@@ -54,4 +60,34 @@ export class FakeBank {
     });
     return { status: res.status, body: await res.json() };
   }
+}
+
+/**
+ * The bank's payout API, in memory. Tests set `mode` to make it accept,
+ * reject, or time out (an unknown outcome), and read `requests` to see what
+ * was sent. The final result arrives later as a signed webhook.
+ */
+export class FakeBankApi implements BankClient {
+  mode: "accept" | "reject" | "timeout" = "accept";
+  readonly requests: PayoutInstruction[] = [];
+
+  requestPayout(instruction: PayoutInstruction): Promise<PayoutSubmission> {
+    this.requests.push(instruction);
+    if (this.mode === "timeout") {
+      return Promise.reject(new BankUnknownOutcomeError("bank did not answer in time"));
+    }
+    return Promise.resolve(this.mode === "accept" ? "accepted" : "rejected");
+  }
+}
+
+export function payoutResult(args: {
+  payoutId: string;
+  result: "completed" | "failed";
+  bankTxnId?: string;
+}) {
+  return {
+    type: `payout.${args.result}` as const,
+    bankTxnId: args.bankTxnId ?? `spei_out_${randomUUID()}`,
+    payoutId: args.payoutId,
+  };
 }

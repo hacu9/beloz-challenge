@@ -109,12 +109,26 @@ The reversal-lock mutation first stayed green: the capture-vs-reversal race is
 already serialised by the hold row lock. The account lock protects a different
 race (reversal vs new authorizations on the same account), so that test was added.
 
-## M6 — Repayment
+## M6 — Repayment and payouts (done 2026-10-31)
 
-- [ ] Repayment webhook. (REPAY-01..03)
-- [ ] Payout module: request with payout ID as bank idempotency key, four states, timeout → `unknown`, no auto-retry. (REPAY-04, PAYOUT-01..06)
-- [ ] Ops endpoints: list and resolve `unknown`/`failed` payouts, list `unapplied_funds`. (PAYOUT-04, COL-08)
-- [ ] Late payout webhook: resolve only `unknown`, flag a mismatch after a manual resolution. (PAYOUT-08, PAYOUT-09)
+- [x] Repayment webhook: debt first, excess to credit. (REPAY-01..03)
+- [x] Credit netting at capture time; returnable credit never nets. (PAYOUT-10, PAYOUT-11)
+- [x] Payout module: five states, payout ID as bank idempotency key, timeout → `unknown`, no auto-retry; `send-payouts` job. (REPAY-04, PAYOUT-01..06, PAYOUT-12, PAYOUT-13)
+- [x] Ops endpoints: list and resolve payouts (completed / failed / retry / cancel), list `unapplied_funds`. (PAYOUT-04, COL-08)
+- [x] Late payout webhook: resolve only `requested`/`unknown`, flag a mismatch after a manual resolution. (PAYOUT-08, PAYOUT-09)
+- [x] Test isolation fix for table-wide lock checks (D-M6-5).
+
+**Mutation checks (M6).**
+
+| Mutation | Test that goes red |
+|---|---|
+| Netting ignores credit reserved by a payout | sent-payout credit does not net; parallel job; timeout reservation |
+| Netting uses returnable credit | D-M6-1 return test |
+| No netting | PAYOUT-10; retry/cancel frees credit |
+| Timeout recorded as `failed` | PAYOUT-02 and three ops / late-webhook tests |
+| Bank result overrides a person's resolution | both PAYOUT-09 tests |
+| No advisory lock on the payout result bank ID | 10 overlapping result deliveries |
+| Repayment puts the whole amount on the debt | 16 tests (CHECK `posted_debt >= 0` fires) |
 
 ## M7 — Closure
 

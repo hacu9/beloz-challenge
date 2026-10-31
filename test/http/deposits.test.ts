@@ -249,22 +249,6 @@ describe("collateral deposit", () => {
     expect(rows).toEqual([{ outcome: "unapplied", amount: -42_000 }]);
   });
 
-  it("a transfer to the repayment reference returns 501 until M6 and records nothing", async () => {
-    const { view } = await freshAccount();
-    const bankTxnId = `spei_${randomUUID()}`;
-    const res = await bankTransfer(app, h.clock, {
-      reference: view.repaymentReference,
-      amount: 10_000,
-      bankTxnId,
-    });
-    expect(res.status).toBe(501);
-    const { rowCount } = await h.pool.query(
-      "SELECT 1 FROM bank_transactions WHERE bank_txn_id = $1",
-      [bankTxnId],
-    );
-    expect(rowCount).toBe(0);
-  });
-
   it("rejects a non-MXN or fractional transfer as malformed (422)", async () => {
     const { view } = await freshAccount();
     for (const body of [

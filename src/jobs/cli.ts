@@ -4,10 +4,14 @@ import { loadConfig } from "../platform/config.js";
 import { createPool } from "../platform/db/pool.js";
 import { createLogger } from "../platform/logger.js";
 import { expireDueHolds } from "./expire-holds.js";
+import { sendDuePayouts } from "./send-payouts.js";
 
 // Usage: node dist/jobs/cli.js <job>. In AWS an EventBridge schedule runs it
 // as a one-off ECS task (architecture §12).
-const jobs = { "expire-holds": expireDueHolds } as const;
+const jobs = {
+  "expire-holds": expireDueHolds,
+  "send-payouts": (deps: Parameters<typeof sendDuePayouts>[0]) => sendDuePayouts(deps),
+} as const;
 
 async function main(): Promise<void> {
   const name = process.argv[2] as keyof typeof jobs | undefined;

@@ -3,13 +3,13 @@ import { z } from "zod";
 import type { Deps } from "../../deps.js";
 import { requireBankSignature } from "../../http/middleware/auth.js";
 import { withTx } from "../../platform/db/tx.js";
+import { PayoutResultEvent } from "../payouts/payouts.js";
 import { TransferReceived } from "./deposits.js";
 
-// M6 adds payout result events to this union.
-const BankEvent = z.discriminatedUnion("type", [TransferReceived]);
+const BankEvent = z.union([TransferReceived, PayoutResultEvent]);
 
 export function bankRoutes(deps: Deps): Router {
-  const { config, clock, pool, deposits } = deps;
+  const { config, clock, pool, deposits, payouts } = deps;
   const r = express.Router();
 
   // COL-02, SEC-04: only a signed bank webhook can move collateral.
@@ -22,7 +22,11 @@ export function bankRoutes(deps: Deps): Router {
     }),
     async (req, res) => {
       const event = BankEvent.parse(req.body);
-      const result = await withTx(pool, (tx) => deposits.receive(tx, event));
+      const result = await withTx<object>(pool, (tx) =>
+        event.type === "transfer.received"
+          ? deposits.receive(tx, event)
+          : payouts.receiveResult(tx, event),
+      );
       res.status(200).json(result);
     },
   );

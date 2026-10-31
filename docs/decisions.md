@@ -99,6 +99,17 @@ accepted them on 2026-10-31.
 | D-M5-3 | A capture releases the whole open hold, whatever its amount, and links to it; a capture on a hold that is not open links to nothing. | One capture per hold (OQ-09); `captures.hold_id` is unique, and a capture must never fail. |
 | D-M5-4 | A capture or refund does not net against an existing credit balance. | The credit balance is paid back (REPAY-04), and its source decides which bank account pays (D-M5-1). Netting would mix the two. |
 
+## M6 build decisions (2026-10-31)
+
+| ID | Decision | Reason |
+|---|---|---|
+| D-M6-0 | Free credit nets against new debt at capture time, until a payout takes it (PAYOUT-10). | Henry 2026-10-31. |
+| D-M6-1 | Credit from a deposit that landed in the collateral account never nets; it is returned from `cash_collateral` (PAYOUT-11). **Narrows D-M6-0; needs Henry's confirmation.** | Netting it would move cash out of the segregated account without a real bank transfer: the ledger and the bank statement would disagree. |
+| D-M6-2 | Payouts are created by a scheduled job, not at the moment credit appears. | Without a delay there is no "not sent yet" window, so D-M6-0 would never apply. |
+| D-M6-3 | The customer gives a payout CLABE when opening the account. | A payout needs a destination; the service had none. |
+| D-M6-4 | Fifth payout state `cancelled`: ops gives up on a failed payout; the reservation ends. | OQ-06 says a person resolves a failed payout; "retry" and "give up" are the two resolutions. |
+| D-M6-5 | The test schema checks that take table-wide locks (`TRUNCATE … CASCADE`, unfiltered `UPDATE`/`DELETE` as owner) run in an isolated copy of the test database. | Once (1 of 9 runs) the owner-trigger test failed. The cascading TRUNCATE locks every table that references the ledger, so it can deadlock with, or kill, transactions in parallel test files. The log of the failing run was lost, so the deadlock is the likely cause, not a proven one. 5 of 5 runs green after the change. |
+
 ## Dependency audit (2026-10-31)
 
 | Package | Severity | Scope | Action |

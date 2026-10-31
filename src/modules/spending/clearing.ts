@@ -6,6 +6,7 @@ import { addCentavos, type Centavos } from "../../platform/money.js";
 import type { Account, Accounts } from "../accounts/accounts.js";
 import type { Actor, AuditLog } from "../audit/audit.js";
 import { transfer, type JournalLineInput, type Ledger } from "../ledger/ledger.js";
+import type { Payouts } from "../payouts/payouts.js";
 import type { Authorizations } from "./authorizations.js";
 
 const NETWORK: Actor = { type: "network" };
@@ -71,6 +72,7 @@ export class Clearing {
     private readonly audit: AuditLog,
     private readonly accounts: Accounts,
     private readonly authorizations: Authorizations,
+    private readonly payouts: Payouts,
   ) {}
 
   // SPEND-06, SPEND-07, SPEND-11. Lock order: capture ID, then account row.
@@ -152,7 +154,7 @@ export class Clearing {
         this.clock.now(),
       ],
     );
-    await this.accounts.update(
+    const updated = await this.accounts.update(
       tx,
       account,
       { held_total: heldTotal, posted_debt: addCentavos(account.posted_debt, req.amount) },
@@ -166,6 +168,8 @@ export class Clearing {
       before: hold ? { holdStatus: hold.status, holdAmount: hold.amount } : null,
       after: { amount: req.amount, holdId, journalId, forcePost: !hold },
     });
+    // PAYOUT-10: free credit pays the new debt before any payout takes it.
+    await this.payouts.netAgainstDebt(tx, updated, NETWORK);
     return {
       networkCaptureId: req.networkCaptureId,
       captureId: rows[0]!.id,

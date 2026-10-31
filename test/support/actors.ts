@@ -11,12 +11,16 @@ export async function bearer(role: "customer" | "ops", clock: FixedClock, sub = 
   return `Bearer ${await issueToken({ sub, role }, testConfig.jwtSecret, clock)}`;
 }
 
+/** A fake 18-digit CLABE for the customer's own bank account. */
+export const PAYOUT_CLABE = "012180001234567897";
+export const openBody = { payoutClabe: PAYOUT_CLABE };
+
 export async function openAccount(app: Express, auth: string): Promise<AccountView> {
   const res = await request(app)
     .post("/v1/accounts")
     .set("Authorization", auth)
     .set("Idempotency-Key", randomUUID())
-    .send({});
+    .send(openBody);
   if (res.status !== 201) throw new Error(`open account failed: ${res.status} ${res.text}`);
   return res.body as AccountView;
 }

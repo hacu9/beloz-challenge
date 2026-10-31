@@ -3,7 +3,7 @@ import request from "supertest";
 import { afterAll, describe, expect, it } from "vitest";
 import type { AccountView } from "../../src/modules/accounts/accounts.js";
 import { createHarness } from "../support/harness.js";
-import { bearer, getAccount, openAccount } from "../support/actors.js";
+import { bearer, getAccount, openAccount, openBody } from "../support/actors.js";
 
 const h = createHarness();
 afterAll(() => h.close());
@@ -59,7 +59,7 @@ describe("open account", () => {
       .post("/v1/accounts")
       .set("Authorization", auth)
       .set("Idempotency-Key", randomUUID())
-      .send({});
+      .send(openBody);
     expect(res.status).toBe(409);
     expect(res.body.error.code).toBe("account_exists");
   });
@@ -72,7 +72,7 @@ describe("open account", () => {
           .post("/v1/accounts")
           .set("Authorization", auth)
           .set("Idempotency-Key", randomUUID())
-          .send({}),
+          .send(openBody),
       ),
     );
     expect(results.map((r) => r.status).sort()).toEqual([201, 409, 409]);
@@ -86,7 +86,7 @@ describe("open account", () => {
         .post("/v1/accounts")
         .set("Authorization", auth)
         .set("Idempotency-Key", key)
-        .send({});
+        .send(openBody);
     const first = await send();
     const second = await send();
     expect(second.status).toBe(201);
@@ -98,8 +98,25 @@ describe("open account", () => {
       .post("/v1/accounts")
       .set("Authorization", await bearer("ops", h.clock))
       .set("Idempotency-Key", randomUUID())
-      .send({});
+      .send(openBody);
     expect(res.status).toBe(403);
+  });
+});
+
+describe("D-M6-3: payout CLABE", () => {
+  it("opening an account requires an 18-digit payout CLABE; the view shows only its last 4", async () => {
+    const auth = await bearer("customer", h.clock);
+    for (const body of [{}, { payoutClabe: "123" }, { payoutClabe: "01218000123456789x" }]) {
+      const res = await request(app)
+        .post("/v1/accounts")
+        .set("Authorization", auth)
+        .set("Idempotency-Key", randomUUID())
+        .send(body);
+      expect(res.status).toBe(422);
+    }
+    const view = await openAccount(app, auth);
+    expect(view.payoutClabeLast4).toBe("7897");
+    expect(JSON.stringify(view)).not.toContain("012180001234567897");
   });
 });
 
