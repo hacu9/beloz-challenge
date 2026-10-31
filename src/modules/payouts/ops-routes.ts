@@ -18,6 +18,10 @@ const ListQuery = z.object({
     .transform((v) => v === "true")
     .optional(),
   accountId: z.string().uuid().optional(),
+  stuck: z
+    .enum(["true", "false"])
+    .transform((v) => v === "true")
+    .optional(),
 });
 
 // Ops only. Everything that needs a person: payouts in doubt, failed payouts,
@@ -31,6 +35,8 @@ export function opsRoutes(deps: Deps): Router {
   r.get("/payouts", async (req, res) => {
     const q = ListQuery.parse(req.query);
     const rows = await payouts.list(pool, {
+      stuckBefore: new Date(clock.now().getTime() - config.payoutStuckMinutes * 60_000),
+      ...(q.stuck !== undefined ? { stuck: q.stuck } : {}),
       ...(q.status ? { statuses: q.status } : {}),
       ...(q.mismatch !== undefined ? { mismatch: q.mismatch } : {}),
       ...(q.accountId ? { accountId: q.accountId } : {}),

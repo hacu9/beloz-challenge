@@ -149,7 +149,11 @@ export class Deposits {
       await this.accounts.update(
         tx,
         account,
-        { status: "active", credit_limit: addCentavos(account.credit_limit, amount) },
+        {
+          status: "active",
+          credit_limit: addCentavos(account.credit_limit, amount),
+          activated_at: this.clock.now(),
+        },
         { actor: BANK, action: "account.activated" },
       );
       await this.accounts.setCardStatus(tx, account.id, "active", BANK);
@@ -193,23 +197,40 @@ export class Deposits {
     amount: Centavos,
   ): Promise<{ outcome: DepositOutcome; journalId: string }> {
     const own = await this.ledger.customerAccounts(tx, account.id);
+    // Order: open debt, then charged-off debt (CLOSE-09: a recovery reduces
+    // the loss; it must not come back to the customer as credit), then credit.
     const toDebt = Math.min(amount, account.posted_debt);
-    const toCredit = amount - toDebt;
+    const toRecovery = Math.min(amount - toDebt, account.charged_off_outstanding);
+    const toCredit = amount - toDebt - toRecovery;
     const lines: JournalLineInput[] = [
       { ledgerAccountId: await this.ledger.systemAccountId(tx, "cash_operating"), amount },
     ];
     if (toDebt > 0) lines.push({ ledgerAccountId: own.customer_receivable, amount: -toDebt });
+    if (toRecovery > 0) {
+      lines.push({
+        ledgerAccountId: await this.ledger.systemAccountId(tx, "chargeoff_loss"),
+        amount: -toRecovery,
+      });
+    }
     if (toCredit > 0) lines.push({ ledgerAccountId: own.customer_credit, amount: -toCredit });
     const { journalId } = await this.ledger.post(tx, {
       kind: "repayment",
       accountId: account.id,
       lines,
     });
+    if (toRecovery > 0) {
+      await tx.query(
+        `INSERT INTO charge_offs (account_id, kind, amount, journal_id, created_at)
+         VALUES ($1, 'recovery', $2, $3, $4)`,
+        [account.id, toRecovery, journalId, this.clock.now()],
+      );
+    }
     await this.accounts.update(
       tx,
       account,
       {
         posted_debt: account.posted_debt - toDebt,
+        charged_off_outstanding: account.charged_off_outstanding - toRecovery,
         credit_balance: addCentavos(account.credit_balance, toCredit),
       },
       { actor: BANK, action: "account.repayment_applied" },

@@ -15,7 +15,9 @@ export type CardStatus = "inactive" | "active" | "blocked";
 
 // Architecture §6. Any transition not listed here is a bug, not a user error.
 const TRANSITIONS: Record<AccountStatus, readonly AccountStatus[]> = {
-  pending_collateral: ["active", "closed"],
+  // An account with money but no collateral closes through closing/settling,
+  // so its credited deposits are returned first (CLOSE-01).
+  pending_collateral: ["active", "closing", "closed"],
   active: ["frozen", "closing"],
   frozen: ["active", "closing"],
   closing: ["settling"],
@@ -45,6 +47,9 @@ export interface Account {
   /** Part of credit_balance whose cash is in cash_collateral; returned, never netted (D-M6-1). */
   credit_returnable: Centavos;
   payout_clabe: string | null;
+  /** CLOSE-07/09: charged-off debt the customer still owes (collections). */
+  charged_off_outstanding: Centavos;
+  activated_at: Date | null;
   collateral_reference: string;
   repayment_reference: string;
   version: number;
@@ -68,6 +73,8 @@ const UPDATABLE = [
   "held_total",
   "credit_balance",
   "credit_returnable",
+  "charged_off_outstanding",
+  "activated_at",
   "closing_started_at",
 ] as const;
 
@@ -87,6 +94,8 @@ export interface AccountView {
   creditBalance: Centavos;
   collateralReference: string;
   payoutClabeLast4: string | null;
+  chargedOffOutstanding: Centavos;
+  closingStartedAt: string | null;
   repaymentReference: string;
   card: { last4: string; status: CardStatus };
   createdAt: string;
@@ -111,6 +120,8 @@ export function toView(account: Account, card: Card): AccountView {
     creditBalance: account.credit_balance,
     collateralReference: account.collateral_reference,
     payoutClabeLast4: account.payout_clabe?.slice(-4) ?? null,
+    chargedOffOutstanding: account.charged_off_outstanding,
+    closingStartedAt: account.closing_started_at?.toISOString() ?? null,
     repaymentReference: account.repayment_reference,
     card: { last4: card.last4, status: card.status },
     createdAt: account.created_at.toISOString(),
@@ -136,6 +147,7 @@ export const toAudit = (a: Account) => ({
   heldTotal: a.held_total,
   creditBalance: a.credit_balance,
   creditReturnable: a.credit_returnable,
+  chargedOffOutstanding: a.charged_off_outstanding,
 });
 
 // The accounts module owns the accounts and cards tables. Other modules read

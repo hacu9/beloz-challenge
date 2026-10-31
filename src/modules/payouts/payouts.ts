@@ -3,7 +3,7 @@ import type pg from "pg";
 import type { Clock } from "../../platform/clock.js";
 import type { Queryable } from "../../platform/db/pool.js";
 import { withTx, type Tx } from "../../platform/db/tx.js";
-import { AppError, conflict, notFound, unprocessable } from "../../platform/errors.js";
+import { conflict, notFound, unprocessable } from "../../platform/errors.js";
 import type { Centavos } from "../../platform/money.js";
 import type { Account, Accounts } from "../accounts/accounts.js";
 import type { Actor, AuditLog } from "../audit/audit.js";
@@ -54,7 +54,9 @@ export type PayoutResultOutcome =
 const SYSTEM: Actor = { type: "system" };
 const BANK: Actor = { type: "bank" };
 
-export function toPayoutView(p: Payout) {
+export type StuckReason = "not_submitted" | "no_bank_result";
+
+export function toPayoutView(p: Payout & { stuck_reason?: StuckReason | null }) {
   return {
     id: p.id,
     accountId: p.account_id,
@@ -69,6 +71,7 @@ export function toPayoutView(p: Payout) {
     resolvedBy: p.resolved_by,
     resolutionNote: p.resolution_note,
     mismatch: p.mismatch,
+    stuckReason: p.stuck_reason ?? null,
     createdAt: p.created_at.toISOString(),
   };
 }
@@ -92,6 +95,31 @@ export class Payouts {
       [accountId, OPEN],
     );
     return rows[0]!.reserved;
+  }
+
+  /** Collateral already in an open collateral payout (CLOSE-04). */
+  async reservedCollateral(tx: Tx, accountId: string): Promise<Centavos> {
+    const { rows } = await tx.query<{ reserved: number }>(
+      `SELECT coalesce(sum(amount), 0) AS reserved FROM payouts
+       WHERE account_id = $1 AND kind = 'collateral' AND status = ANY($2)`,
+      [accountId, OPEN],
+    );
+    return rows[0]!.reserved;
+  }
+
+  /** CLOSE-04: pays the remaining collateral back. Call under the account lock. */
+  async createCollateralPayout(tx: Tx, account: Account, amount: Centavos): Promise<Payout> {
+    if (!account.payout_clabe) throw new Error(`account ${account.id} has no payout CLABE`);
+    return this.insert(tx, account, "collateral", amount, "cash_collateral", null);
+  }
+
+  /** Any payout of this account whose money is not settled yet (PAYOUT-07). */
+  async hasOpenPayouts(tx: Tx, accountId: string): Promise<boolean> {
+    const { rowCount } = await tx.query(
+      "SELECT 1 FROM payouts WHERE account_id = $1 AND status = ANY($2) LIMIT 1",
+      [accountId, OPEN],
+    );
+    return (rowCount ?? 0) > 0;
   }
 
   /** Credit that is neither returnable nor in a payout: the only credit that may net. */
@@ -368,15 +396,13 @@ export class Payouts {
     bankTxnId: string | null,
     resolution: { resolved_by?: string | null; resolution_note?: string } = {},
   ): Promise<void> {
-    if (payout.kind === "collateral") {
-      throw new AppError(501, "not_implemented", "collateral payouts arrive in M7");
-    }
     const own = await this.ledger.customerAccounts(tx, account.id);
+    const collateral = payout.kind === "collateral";
     const { journalId } = await this.ledger.post(tx, {
-      kind: "credit_payout",
+      kind: collateral ? "collateral_payout" : "credit_payout",
       accountId: account.id,
       lines: transfer(
-        own.customer_credit,
+        collateral ? own.customer_collateral : own.customer_credit,
         await this.ledger.systemAccountId(tx, payout.source_cash),
         payout.amount,
       ),
@@ -384,12 +410,14 @@ export class Payouts {
     await this.accounts.update(
       tx,
       account,
-      {
-        credit_balance: account.credit_balance - payout.amount,
-        ...(payout.kind === "return"
-          ? { credit_returnable: account.credit_returnable - payout.amount }
-          : {}),
-      },
+      collateral
+        ? { credit_limit: account.credit_limit - payout.amount }
+        : {
+            credit_balance: account.credit_balance - payout.amount,
+            ...(payout.kind === "return"
+              ? { credit_returnable: account.credit_returnable - payout.amount }
+              : {}),
+          },
       { actor, action: "payout.completed" },
     );
     await tx.query(
@@ -451,17 +479,41 @@ export class Payouts {
     return rows[0];
   }
 
+  // PAYOUT-14: a requested payout is stuck when, after `stuckBefore`, it was
+  // never submitted (the process died before the bank call) or the bank took
+  // it but sent no result. Nothing resends it; a person looks.
   async list(
     db: Queryable,
-    filter: { statuses?: PayoutStatus[]; mismatch?: boolean; accountId?: string },
-  ) {
-    const { rows } = await db.query<Payout>(
-      `SELECT * FROM payouts
+    filter: {
+      stuckBefore: Date;
+      statuses?: PayoutStatus[];
+      mismatch?: boolean;
+      accountId?: string;
+      stuck?: boolean;
+    },
+  ): Promise<(Payout & { stuck_reason: StuckReason | null })[]> {
+    const { rows } = await db.query<Payout & { stuck_reason: StuckReason | null }>(
+      `SELECT * FROM (
+         SELECT p.*,
+           CASE
+             WHEN p.status = 'requested' AND p.submitted_at IS NULL AND p.created_at <= $5
+               THEN 'not_submitted'
+             WHEN p.status = 'requested' AND p.submitted_at <= $5
+               THEN 'no_bank_result'
+           END AS stuck_reason
+         FROM payouts p) x
        WHERE ($1::text[] IS NULL OR status = ANY($1))
          AND ($2::boolean IS NULL OR mismatch = $2)
          AND ($3::uuid IS NULL OR account_id = $3)
+         AND ($4::boolean IS NULL OR (stuck_reason IS NOT NULL) = $4)
        ORDER BY created_at`,
-      [filter.statuses ?? null, filter.mismatch ?? null, filter.accountId ?? null],
+      [
+        filter.statuses ?? null,
+        filter.mismatch ?? null,
+        filter.accountId ?? null,
+        filter.stuck ?? null,
+        filter.stuckBefore,
+      ],
     );
     return rows;
   }

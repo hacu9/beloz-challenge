@@ -37,6 +37,17 @@ export function accountRoutes(deps: Deps): Router {
     res.json({ accounts: rows.map((r) => toView(r.account, r.card)) });
   });
 
+  // CLOSE-01: closing blocks new purchases at once; the closure job does the rest.
+  r.post("/:id/close", customerOrOps, requireIdempotencyKey(), async (req, res) => {
+    const id = AccountId.safeParse(req.params.id);
+    if (!id.success) throw notFound("account not found");
+    const caller = userOf(req);
+    await sendIdempotent(req, res, deps, async (tx) => {
+      const account = await deps.closure.requestClose(tx, id.data, caller);
+      return { status: 200, body: { ...toView(account, await accounts.card(tx, account.id)) } };
+    });
+  });
+
   // SEC-02: an unknown ID, a malformed ID and another customer's ID all look the same.
   r.get("/:id", customerOrOps, async (req, res) => {
     const id = AccountId.safeParse(req.params.id);

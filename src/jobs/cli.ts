@@ -4,6 +4,7 @@ import { loadConfig } from "../platform/config.js";
 import { createPool } from "../platform/db/pool.js";
 import { createLogger } from "../platform/logger.js";
 import { expireDueHolds } from "./expire-holds.js";
+import { progressClosures } from "./progress-closures.js";
 import { sendDuePayouts } from "./send-payouts.js";
 
 // Usage: node dist/jobs/cli.js <job>. In AWS an EventBridge schedule runs it
@@ -11,6 +12,7 @@ import { sendDuePayouts } from "./send-payouts.js";
 const jobs = {
   "expire-holds": expireDueHolds,
   "send-payouts": (deps: Parameters<typeof sendDuePayouts>[0]) => sendDuePayouts(deps),
+  "progress-closures": (deps: Parameters<typeof progressClosures>[0]) => progressClosures(deps),
 } as const;
 
 async function main(): Promise<void> {

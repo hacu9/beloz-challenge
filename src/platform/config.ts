@@ -15,6 +15,7 @@ const ConfigSchema = z.object({
   closingCaptureWindowDays: intFromEnv(30),
   minDepositCentavos: intFromEnv(50_000),
   maxAmountCentavos: intFromEnv(100_000_000),
+  payoutStuckMinutes: intFromEnv(5),
 });
 
 export type Config = z.infer<typeof ConfigSchema>;
@@ -32,5 +33,6 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     closingCaptureWindowDays: env.CLOSING_CAPTURE_WINDOW_DAYS,
     minDepositCentavos: env.MIN_DEPOSIT_CENTAVOS,
     maxAmountCentavos: env.MAX_AMOUNT_CENTAVOS,
+    payoutStuckMinutes: env.PAYOUT_STUCK_MINUTES,
   });
 }

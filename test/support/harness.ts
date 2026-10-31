@@ -22,6 +22,7 @@ export const testConfig: Config = {
   closingCaptureWindowDays: 30,
   minDepositCentavos: 50_000,
   maxAmountCentavos: 100_000_000,
+  payoutStuckMinutes: 5,
 };
 
 export interface Harness {

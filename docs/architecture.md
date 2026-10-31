@@ -142,6 +142,8 @@ so the whole ledger sums to zero.
 | Deposit to a collateral reference, any other state or below minimum | `cash_collateral` | `customer_credit` |
 | Deposit, unknown reference | `cash_operating` | `unapplied_funds` |
 | Charge-off of uncovered debt | `chargeoff_loss` | `customer_receivable` |
+| Recovery of charged-off debt (CLOSE-09) | `cash_operating` | `chargeoff_loss` |
+| Collateral payout completed | `customer_collateral` | `cash_collateral` |
 | Capture | `customer_receivable` | `network_payable` |
 | Refund (up to debt) | `network_payable` | `customer_receivable` |
 | Refund (excess) | `network_payable` | `customer_credit` |
@@ -201,7 +203,8 @@ stateDiagram-v2
   frozen --> active: unfreeze
   active --> closing: close request
   frozen --> closing: close request
-  pending_collateral --> closed: close (no deposit)
+  pending_collateral --> closed: close (no money)
+  pending_collateral --> closing: close (credited deposit to return)
   closing --> settling: no open holds and late-capture window ended
   settling --> closed: all payouts confirmed
 ```
@@ -321,7 +324,11 @@ All jobs read the injectable clock and take the account lock like any other writ
 - Run with `npm run job -- <name>` locally, `node dist/jobs/cli.js <name>` in a container.
 - `send-payouts`: creates the due `return` and `credit` payouts per account (one transaction each, under the account lock), then sends each one after commit.
 - `expire-holds`: marks overdue holds `expired` and lowers `held_total`. The authorize path also expires holds lazily, so correctness does not depend on the job. Until the job runs, `GET /v1/accounts/:id` can show an overdue hold in `heldTotal`; the next authorization never sees it.
-- `progress-closures`: moves `closing` → `settling`, posts the collateral application, requests the payouts.
+- `progress-closures`: one idempotent step per account, under the account lock:
+  1. `closing` → `settling` once no hold is open and the late-capture window has passed (skipped if the card never activated);
+  2. in `settling` (and on `closed` accounts where late money arrived, CLOSE-08): net free credit, apply unreserved collateral to the debt, charge off what is left (`charge_offs` row, `charged_off_outstanding`), create the collateral, credit and return payouts;
+  3. `settling` → `closed` when debt, holds, collateral and credit are all 0 and no payout is open.
+  Payouts are sent after the commit. Collateral already in a payout is never pulled back: debt that appears after it left is charged off.
 - `reconcile`: OPS-03.
 
 ## 12. Deployment (AWS, not applied)

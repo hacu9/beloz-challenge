@@ -130,10 +130,27 @@ race (reversal vs new authorizations on the same account), so that test was adde
 | No advisory lock on the payout result bank ID | 10 overlapping result deliveries |
 | Repayment puts the whole amount on the debt | 16 tests (CHECK `posted_debt >= 0` fires) |
 
-## M7 — Closure
+## M7 — Closure (done 2026-10-31)
 
-- [ ] Close request → `closing`. (CLOSE-01, CLOSE-02)
-- [ ] `progress-closures` job: `closing` → `settling` → `closed`. (CLOSE-03..08, PAYOUT-07)
+- [x] Close request → `closing`, card blocked; empty pending account closes at once. (CLOSE-01, CLOSE-02)
+- [x] `progress-closures` job: `closing` → `settling` → `closed`; collateral application, charge-off, collateral payout. (CLOSE-03..08, PAYOUT-07)
+- [x] Recovery of charged-off debt. (CLOSE-09)
+- [x] Stuck payout flag in the ops list. (PAYOUT-14)
+
+**Mutation checks (M7).**
+
+| Mutation | Test that goes red |
+|---|---|
+| No late-capture window | CLOSE-02..06 |
+| Collateral not applied to debt | CLOSE-02..06, CLOSE-07, CLOSE-09 |
+| No charge-off | CLOSE-07, CLOSE-08, CLOSE-09 |
+| No recovery | CLOSE-09 |
+| Reserved collateral ignored (second collateral payout) | CLOSE-02..06, PAYOUT-07 |
+| Close request does not change the status | CLOSE-01 and 8 more |
+| Stuck threshold `<` instead of `<=` | PAYOUT-14 |
+| Close without the open-payout check | **stays green**: the balance checks (`credit_limit = 0`, `credit_balance = 0`) also enforce PAYOUT-07, because a payout posts only on completion |
+| Close without the balance checks, payout check kept | stays green (same reason, the other way round) |
+| Close without both | PAYOUT-07 and 2 more: the two barriers are independent |
 
 ## M8 — Operability and demo
 

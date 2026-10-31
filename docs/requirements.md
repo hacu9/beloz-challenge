@@ -86,18 +86,20 @@ Format: each requirement has an ID, one rule, and the source decision (`Q` =
 | PAYOUT-11 | A deposit credited to the customer (COL-07, COL-09) shall go back as a `return` payout from `cash_collateral` and shall never net against debt. | D-M6-1 |
 | PAYOUT-12 | Payouts shall go to the payout CLABE the customer gave when opening the account. Opening an account without an 18-digit payout CLABE shall return 422. | D-M6-3 |
 | PAYOUT-13 | A scheduled job shall create the due payouts and send each one after its commit, with no lock held during the bank call. | REPAY-04 |
+| PAYOUT-14 | The ops payout list shall flag a `requested` payout as stuck when, `PAYOUT_STUCK_MINUTES` after creation, it was never submitted (`not_submitted`), or, that long after submission, the bank sent no result (`no_bank_result`). | Henry 2026-10-31 |
 | PAYOUT-09 | When a bank result webhook arrives for a payout that a person already resolved, the service shall not change the payout. If the results differ, it shall flag a mismatch for ops and write an audit row. | OQ-12 |
 
 ## 6. Closure and collateral release (CLOSE)
 
 | ID | Requirement | Source |
 |---|---|---|
-| CLOSE-01 | When a customer or ops requests closure, the service shall move the account to `closing` at once. From then on it shall decline all new authorizations. | Q19 |
+| CLOSE-01 | When a customer or ops requests closure, the service shall move the account to `closing` at once and block the card. From then on it shall decline all new authorizations. A `pending_collateral` account with no money closes at once. A second close request returns 409. | Q19 |
 | CLOSE-02 | In `closing`, the service shall still post captures, reversals, refunds and repayments. | Q15, Q19 |
-| CLOSE-03 | The service shall move the account from `closing` to `settling` when no open hold remains and `CLOSING_CAPTURE_WINDOW_DAYS` have passed since the close request. | Q19, OQ-03 |
+| CLOSE-03 | The service shall move the account from `closing` to `settling` when no open hold remains and `CLOSING_CAPTURE_WINDOW_DAYS` have passed since the close request. An account that never activated skips the window. | Q19, OQ-03 |
 | CLOSE-04 | In `settling`, the service shall apply the collateral to the debt first, then pay out the remaining collateral and the credit balance to the customer. | Q19 |
 | CLOSE-05 | The service shall move the account to `closed` when the bank confirms all payouts. | Q19, OQ-06 |
 | CLOSE-07 | When the debt is larger than the collateral, the service shall apply all collateral and post the rest to `chargeoff_loss`. | OQ-04 |
+| CLOSE-09 | A repayment shall pay open debt first, then charged-off debt (a recovery that reduces `chargeoff_loss`), and only then become credit. | D-M7-1 |
 | CLOSE-08 | A capture, refund or repayment in `settling` or `closed` shall post. A credit that results shall trigger a new payout. | OQ-05 |
 | CLOSE-06 | The service shall never release collateral while the account has debt. | Q19, Q24 |
 
